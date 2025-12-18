@@ -112,12 +112,22 @@ def _initiate_database():
             'cos(start_angle-(factor*sample)))',
         )
     )
+    cm_as5600_lookup = CalibrationMethod(
+        id=uuid.UUID('f8a2c9d1e4b74a8f9c3d6e5f0a1b2c3d'),
+        name="as5600-lookup",
+        description="AS5600 lookup table with linear interpolation. "
+        "Enter sensor angle (degrees) vs stroke (mm) points.",
+        properties=dict(
+            type="as5600-lookup",
+        )
+    )
     db.session.add(cm_fraction)
     db.session.add(cm_percentage)
     db.session.add(cm_linear)
     db.session.add(cm_linear_potmeter)
     db.session.add(cm_as5600_isosceles_triangle)
     db.session.add(cm_as5600_triangle)
+    db.session.add(cm_as5600_lookup)
 
     import random
     import string

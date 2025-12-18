@@ -40,17 +40,54 @@ class CalibrationMethod(db.Model, Synchronizable):
     def properties(self, value: dict):
         self.properties_raw = json.dumps(value)
 
-    def validate(self) -> float:
+    def validate(self) -> bool:
+        props = self.properties
+
+        # Handle lookup type calibration
+        if props.get('type') == 'as5600-lookup':
+            return self._validate_lookup(props)
+
+        # Handle expression type calibration (default)
+        return self._validate_expression(props)
+
+    def _validate_lookup(self, props: dict) -> bool:
+        """Validate lookup table properties"""
+        points = props.get('points', [])
+
+        # Must have at least 2 points
+        if not isinstance(points, list) or len(points) < 2:
+            return False
+
+        # Validate each point has deg and mm as numbers
+        for point in points:
+            if not isinstance(point, dict):
+                return False
+            if 'deg' not in point or 'mm' not in point:
+                return False
+            try:
+                deg = float(point['deg'])
+                mm = float(point['mm'])
+                if deg < 0 or deg > 360:
+                    return False
+                if mm < 0:
+                    return False
+            except (TypeError, ValueError):
+                return False
+
+        return True
+
+    def _validate_expression(self, props: dict) -> bool:
+        """Validate expression-based properties"""
         env = dict(_std_env)
-        for input in self.properties['inputs']:
+        for input in props.get('inputs', []):
             env[input] = 1
         parser = ExpressionParser(env)
-        for k, v in self.properties['intermediates'].items():
+        for k, v in props.get('intermediates', {}).items():
             if not parser.validate(v):
                 return False
             env[k] = 1
         parser = ExpressionParser(env)
-        return parser.validate(self.properties['expression'])
+        return parser.validate(props.get('expression', ''))
 
 
 @dataclass
@@ -76,7 +113,35 @@ class Calibration(db.Model, Synchronizable):
         cm = CalibrationMethod.get(self.method_id)
         if not cm:
             return False
-        for k in cm.properties['inputs']:
+
+        # Handle lookup type calibration
+        if cm.properties.get('type') == 'as5600-lookup':
+            return self._validate_lookup_inputs()
+
+        # Handle expression type calibration (default)
+        for k in cm.properties.get('inputs', []):
             if k not in self.inputs:
                 return False
+        return True
+
+    def _validate_lookup_inputs(self) -> bool:
+        """Validate lookup table points in inputs"""
+        points = self.inputs.get('points', [])
+
+        # Must have at least 2 points
+        if not isinstance(points, list) or len(points) < 2:
+            return False
+
+        # Validate each point has deg and mm
+        for point in points:
+            if not isinstance(point, dict):
+                return False
+            if 'deg' not in point or 'mm' not in point:
+                return False
+            try:
+                float(point['deg'])
+                float(point['mm'])
+            except (TypeError, ValueError):
+                return False
+
         return True

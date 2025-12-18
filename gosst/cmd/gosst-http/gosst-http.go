@@ -178,7 +178,7 @@ func (this *RequestHandler) PutNormalizedSession(c *gin.Context) {
 	fcal := &psst.Calibration{
 		Name:   "Fraction",
 		Method: &method,
-		Inputs: map[string]float64{},
+		Inputs: map[string]interface{}{},
 	}
 	if err := fcal.Prepare(linkage.MaxFrontStroke, linkage.MaxFrontTravel); err != nil {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -187,7 +187,7 @@ func (this *RequestHandler) PutNormalizedSession(c *gin.Context) {
 	rcal := &psst.Calibration{
 		Name:   "Fraction",
 		Method: &method,
-		Inputs: map[string]float64{},
+		Inputs: map[string]interface{}{},
 	}
 	if err := rcal.Prepare(linkage.MaxRearStroke, linkage.MaxRearTravel); err != nil {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

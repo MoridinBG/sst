@@ -10,6 +10,7 @@ var Linkage = require("../models/Linkage")
 var LinkageForm = require("./LinkageForm")
 var InputField = require("./InputField")
 var Textarea = require("./Textarea")
+var LookupTableInput = require("./LookupTableInput")
 
 var GeneralForm = {
   name: null,
@@ -63,37 +64,82 @@ class CalibrationForm {
   constructor(label) {
     this.label = label
     this.params = {}
+    this.lookupPoints = []
 
     this.selected = 0
     this.onselect = this.onselect.bind(this);
   }
+
+  isLookupType() {
+    const cm = CalibrationMethod.list.get(this.selected)
+    return cm && cm.properties.type === 'as5600-lookup'
+  }
+
   onselect(value) {
     this.selected = value;
     const cm = CalibrationMethod.list.get(this.selected)
     this.params = {}
+    this.lookupPoints = []
+
     if (cm !== undefined) {
-      cm.properties.inputs.forEach((input) => {
-        this.params[input] = null
-      })
+      if (cm.properties.type === 'as5600-lookup') {
+        // Initialize with two empty rows
+        this.lookupPoints = [{deg: null, mm: null}, {deg: null, mm: null}]
+      } else {
+        // Expression type - initialize params from inputs
+        (cm.properties.inputs || []).forEach((input) => {
+          this.params[input] = null
+        })
+      }
     }
     m.redraw();
   }
+
   validateValue(value) {
     return !value ? "Required" : ""
   }
+
+  validateLookupPoints() {
+    if (this.lookupPoints.length < 2) return false
+    for (var i = 0; i < this.lookupPoints.length; i++) {
+      var point = this.lookupPoints[i]
+      if (LookupTableInput.validateDeg(point.deg) !== "") return false
+      if (LookupTableInput.validateMm(point.mm) !== "") return false
+    }
+    return true
+  }
+
   validate() {
+    if (this.isLookupType()) {
+      return this.validateLookupPoints()
+    }
+
+    // Expression type validation
     var isValid = true
     Object.entries(this.params).forEach((e) => {
       isValid = isValid && this.validateValue(e[1]) === ""
     })
     return isValid
   }
+
+  getInputs() {
+    if (this.isLookupType()) {
+      return { points: this.lookupPoints }
+    }
+    return this.params
+  }
+
   reset() {
     this.selected = 0
+    this.params = {}
+    this.lookupPoints = []
     m.redraw()
   }
+
   view(vnode) {
     const cm = CalibrationMethod.list.get(this.selected)
+    const isLookup = this.isLookupType()
+
     return m(".setup-page", [
       m(".setup-page-header", this.label),
       m(".input-field", [
@@ -103,17 +149,20 @@ class CalibrationForm {
           cm !== undefined ? m(".list-description", cm.description) : null,
         ])
       ]),
-    ].concat(cm !== undefined ? cm.properties.inputs.flatMap(input => [
-        m(InputField, {
-          name: input,
-          type: "number",
-          step: "any",
-          value: this.params[input],
-          oninput: (e) => (this.params[input] = parseFloat(e.target.value)),
-          validate: (value) => this.validateValue(value),
-        }),
-      ]) : null)
-    )
+    ].concat(cm !== undefined ? (
+      isLookup
+        ? [m(LookupTableInput, { points: this.lookupPoints })]
+        : (cm.properties.inputs || []).flatMap(input => [
+            m(InputField, {
+              name: input,
+              type: "number",
+              step: "any",
+              value: this.params[input],
+              oninput: (e) => (this.params[input] = parseFloat(e.target.value)),
+              validate: (value) => this.validateValue(value),
+            }),
+          ])
+    ) : null))
   }
 }
 
@@ -165,13 +214,13 @@ var SetupWizard = {
     const frontCalibrationBody = frontCalibrationForm.selected ? {
       name: "Front calibration for " + GeneralForm.name,
       method_id: frontCalibrationForm.selected,
-      inputs: frontCalibrationForm.params,
+      inputs: frontCalibrationForm.getInputs(),
     } : null
 
     const rearCalibrationBody = rearCalibrationForm.selected ? {
       name: "Rear calibration for " + GeneralForm.name,
       method_id: rearCalibrationForm.selected,
-      inputs: rearCalibrationForm.params,
+      inputs: rearCalibrationForm.getInputs(),
     } : null
 
     var combined = {

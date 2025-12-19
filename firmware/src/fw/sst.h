@@ -27,6 +27,7 @@ enum state {
 #define CHUNK_TYPE_RATES 0x00
 #define CHUNK_TYPE_TELEMETRY 0x01
 #define CHUNK_TYPE_MARKER 0x02
+#define CHUNK_TYPE_IMU 0x03
 
 struct chunk_header {
     uint8_t type;
@@ -50,7 +51,12 @@ struct record {
     uint16_t shock_angle;
 };
 
-enum command { OPEN, DUMP, FINISH, MARKER };
+struct imu_record {
+    int16_t ax, ay, az;
+    int16_t gx, gy, gz;
+} __attribute__((packed));
+
+enum command { OPEN, DUMP_TELEMETRY, DUMP_IMU, FINISH, MARKER };
 
 #define BUFFER_SIZE 2048
 #define FILENAME_LENGTH                                                                                                \

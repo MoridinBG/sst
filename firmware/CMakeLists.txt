@@ -30,6 +30,7 @@ add_executable(sufni-suspension-telemetry
     src/util/list.c
     src/sensor/rotational.c
     src/sensor/linear.c
+    src/sensor/lsm6dso.c
 )
 
 if(NOT USB_UART_DEBUG)
@@ -69,6 +70,13 @@ if(${SHOCK_LINEAR})
     target_compile_options(sufni-suspension-telemetry PUBLIC
         -DSHOCK_LINEAR
     )
+endif()
+
+if(IMU_PROTO STREQUAL "I2C")
+    target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_I2C)
+else()
+    target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_SPI)
+    target_link_libraries(sufni-suspension-telemetry hardware_spi)
 endif()
 
 target_include_directories(sufni-suspension-telemetry PUBLIC

@@ -29,6 +29,7 @@
 #include "../net/tcpserver.h"
 #include "../ntp//ntp.h"
 #include "../rtc//ds3231.h"
+#include "../sensor/lsm6dso.h"
 #include "../sensor/sensor.h"
 #include "../util/config.h"
 #include "../util/list.h"
@@ -45,7 +46,8 @@ static uint32_t clock0_orig;
 static uint32_t clock1_orig;
 
 static ssd1306_t disp;
-static repeating_timer_t data_acquisition_timer;
+static repeating_timer_t telemetry_timer;
+static repeating_timer_t imu_timer;
 static FIL recording;
 static struct tcpserver server;
 
@@ -148,10 +150,11 @@ static void calibrate_if_needed() {
 // ----------------------------------------------------------------------------
 // Data acquisition
 
-static const uint16_t SAMPLE_RATE = 1000;
+static const uint16_t TELEMETRY_SAMPLE_RATE = 1000;
+static const uint16_t IMU_SAMPLE_RATE = 1000;
 
-// We are using two buffers. Data acquisition happens on core #1 into the active
-// buffer (referred to by the pointer active_buffer) and we dump to Micro SD card
+// We are using two buffers per sensor type. Data acquisition happens on core #1 into the active
+// buffer (referred to by the pointer active_telemetry_buffer) and we dump to Micro SD card
 // on core #2.
 //
 // When the active buffer is filled on core #1,
@@ -163,38 +166,68 @@ static const uint16_t SAMPLE_RATE = 1000;
 //  - sends the buffer address to core #1 via FIFO
 //
 
-struct record databuffer1[BUFFER_SIZE];
-struct record databuffer2[BUFFER_SIZE];
-struct record *active_buffer = databuffer1;
-uint16_t count = 0;
+struct record telemetry_databuffer1[BUFFER_SIZE];
+struct record telemetry_databuffer2[BUFFER_SIZE];
+struct record *active_telemetry_buffer = telemetry_databuffer1;
+uint16_t telemetry_count = 0;
 
-static void dump_active_buffer(uint16_t size) {
-    multicore_fifo_push_blocking(DUMP);
+struct imu_record imu_databuffer1[BUFFER_SIZE];
+struct imu_record imu_databuffer2[BUFFER_SIZE];
+struct imu_record *active_imu_buffer = imu_databuffer1;
+uint16_t imu_count = 0;
+
+static void dump_active_telemetry_buffer(uint16_t size) {
+    multicore_fifo_push_blocking(DUMP_TELEMETRY);
     multicore_fifo_push_blocking(size);
-    multicore_fifo_push_blocking((uintptr_t)active_buffer);
-    active_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
+    multicore_fifo_push_blocking((uintptr_t)active_telemetry_buffer);
+    active_telemetry_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
 }
 
-static bool data_acquisition_cb(repeating_timer_t *rt) {
-    if (count == BUFFER_SIZE) {
-        dump_active_buffer(BUFFER_SIZE);
-        count = 0;
+static void dump_active_imu_buffer(uint16_t size) {
+    multicore_fifo_push_blocking(DUMP_IMU);
+    multicore_fifo_push_blocking(size);
+    multicore_fifo_push_blocking((uintptr_t)active_imu_buffer);
+    active_imu_buffer = (struct imu_record *)((uintptr_t)multicore_fifo_pop_blocking());
+}
+
+static bool telemetry_cb(repeating_timer_t *rt) {
+    if (telemetry_count == BUFFER_SIZE) {
+        dump_active_telemetry_buffer(BUFFER_SIZE);
+        telemetry_count = 0;
     }
-
-    active_buffer[count].fork_angle = fork_sensor.measure(&fork_sensor);
-    active_buffer[count].shock_angle = shock_sensor.measure(&shock_sensor);
-
-    count += 1;
+    active_telemetry_buffer[telemetry_count].fork_angle = fork_sensor.measure(&fork_sensor);
+    active_telemetry_buffer[telemetry_count].shock_angle = shock_sensor.measure(&shock_sensor);
+    telemetry_count += 1;
 
     if (marker_pending) {
-        dump_active_buffer(count);
-        multicore_fifo_push_blocking(MARKER);
+        dump_active_telemetry_buffer(telemetry_count);
+        telemetry_count = 0;
+        dump_active_imu_buffer(imu_count);
+        imu_count = 0;
 
-        count = 0;
+        multicore_fifo_push_blocking(MARKER);
         marker_pending = false;
     }
 
-    return state == RECORD; // keep repeating if we are still recording
+    return state == RECORD;
+}
+
+static bool imu_cb(repeating_timer_t *rt) {
+    if (imu_count == BUFFER_SIZE) {
+        dump_active_imu_buffer(BUFFER_SIZE);
+        imu_count = 0;
+    }
+    int16_t ax, ay, az, gx, gy, gz;
+    lsm6dso_read(&ax, &ay, &az, &gx, &gy, &gz);
+    active_imu_buffer[imu_count].ax = ax;
+    active_imu_buffer[imu_count].ay = ay;
+    active_imu_buffer[imu_count].az = az;
+    active_imu_buffer[imu_count].gx = gx;
+    active_imu_buffer[imu_count].gy = gy;
+    active_imu_buffer[imu_count].gz = gz;
+    imu_count += 1;
+
+    return state == RECORD;
 }
 
 static bool start_sensors() {
@@ -300,9 +333,12 @@ static int open_datafile() {
     struct header h = {"SST", 4, 0, rtc_timestamp()};
     f_write(&recording, &h, sizeof(struct header), NULL);
 
-    struct chunk_header ch = {CHUNK_TYPE_RATES, sizeof(struct rate_entry)};
+    struct chunk_header ch = {CHUNK_TYPE_RATES, 2 * sizeof(struct rate_entry)};
     f_write(&recording, &ch, sizeof(struct chunk_header), NULL);
-    struct rate_entry re = {CHUNK_TYPE_TELEMETRY, SAMPLE_RATE};
+    struct rate_entry re = {CHUNK_TYPE_TELEMETRY, TELEMETRY_SAMPLE_RATE};
+    f_write(&recording, &re, sizeof(struct rate_entry), NULL);
+    re.type = CHUNK_TYPE_IMU;
+    re.rate = IMU_SAMPLE_RATE;
     f_write(&recording, &re, sizeof(struct rate_entry), NULL);
 
     return index;
@@ -317,6 +353,15 @@ static void write_telemetry_chunk(uint16_t size, struct record *buffer) {
     f_sync(&recording);
 }
 
+static void write_imu_chunk(uint16_t size, struct imu_record *buffer) {
+    struct chunk_header ch;
+    ch.type = CHUNK_TYPE_IMU;
+    ch.length = size * sizeof(struct imu_record);
+    f_write(&recording, &ch, sizeof(struct chunk_header), NULL);
+    f_write(&recording, buffer, ch.length, NULL);
+    f_sync(&recording);
+}
+
 static void data_storage_core1() {
     int err = setup_storage();
     multicore_fifo_push_blocking(err);
@@ -324,7 +369,8 @@ static void data_storage_core1() {
     int index;
     enum command cmd;
     uint16_t size;
-    struct record *buffer;
+    struct record *telemetry_buffer;
+    struct imu_record *imu_buffer;
     struct chunk_header ch;
 
     while (true) {
@@ -334,13 +380,20 @@ static void data_storage_core1() {
                 multicore_fifo_drain();
                 index = open_datafile();
                 multicore_fifo_push_blocking(index);
-                multicore_fifo_push_blocking((uintptr_t)databuffer2);
+                multicore_fifo_push_blocking((uintptr_t)telemetry_databuffer2);
+                multicore_fifo_push_blocking((uintptr_t)imu_databuffer2);
                 break;
-            case DUMP:
+            case DUMP_TELEMETRY:
                 size = (uint16_t)multicore_fifo_pop_blocking();
-                buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
-                multicore_fifo_push_blocking((uintptr_t)buffer);
-                write_telemetry_chunk(size, buffer);
+                telemetry_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
+                multicore_fifo_push_blocking((uintptr_t)telemetry_buffer);
+                write_telemetry_chunk(size, telemetry_buffer);
+                break;
+            case DUMP_IMU:
+                size = (uint16_t)multicore_fifo_pop_blocking();
+                imu_buffer = (struct imu_record *)((uintptr_t)multicore_fifo_pop_blocking());
+                multicore_fifo_push_blocking((uintptr_t)imu_buffer);
+                write_imu_chunk(size, imu_buffer);
                 break;
             case MARKER:
                 ch.type = CHUNK_TYPE_MARKER;
@@ -349,9 +402,14 @@ static void data_storage_core1() {
                 f_sync(&recording);
                 break;
             case FINISH:
+                // Flush telemetry
                 size = (uint16_t)multicore_fifo_pop_blocking();
-                buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
-                write_telemetry_chunk(size, buffer);
+                telemetry_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
+                write_telemetry_chunk(size, telemetry_buffer);
+                // Flush IMU
+                size = (uint16_t)multicore_fifo_pop_blocking();
+                imu_buffer = (struct imu_record *)((uintptr_t)multicore_fifo_pop_blocking());
+                write_imu_chunk(size, imu_buffer);
                 f_close(&recording);
                 break;
         }
@@ -483,8 +541,10 @@ static void on_cal_comp() {
 
 static void on_rec_start() {
     LOG("REC", "Starting recording session\n");
-    count = 0;
-    active_buffer = databuffer1;
+    telemetry_count = 0;
+    active_telemetry_buffer = telemetry_databuffer1;
+    imu_count = 0;
+    active_imu_buffer = imu_databuffer1;
     multicore_fifo_drain();
 
     display_message(&disp, "INIT SENS");
@@ -510,22 +570,35 @@ static void on_rec_start() {
     }
     LOG("REC", "Recording to file index %d\n", index);
 
-    // Start data acquisition timer
-    if (!add_repeating_timer_us(-1000000 / SAMPLE_RATE, data_acquisition_cb, NULL, &data_acquisition_timer)) {
-        display_message(&disp, "TIMER ERR");
+    // Initial buffer pointers for Core 1
+    active_telemetry_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
+    active_imu_buffer = (struct imu_record *)((uintptr_t)multicore_fifo_pop_blocking());
+
+    // Start data acquisition timers
+    if (!add_repeating_timer_us(-1000000 / TELEMETRY_SAMPLE_RATE, telemetry_cb, NULL, &telemetry_timer)) {
+        display_message(&disp, "TEL TMR ERR");
+        while (true) { tight_loop_contents(); }
+    }
+    if (!add_repeating_timer_us(-1000000 / IMU_SAMPLE_RATE, imu_cb, NULL, &imu_timer)) {
+        display_message(&disp, "IMU TMR ERR");
         while (true) { tight_loop_contents(); }
     }
 }
 
 static void on_rec_stop() {
-    LOG("REC", "Stopping recording, samples: %u\n", count);
+    LOG("REC", "Stopping recording, telemetry samples: %u, imu samples: %u\n", telemetry_count, imu_count);
     state = IDLE;
     display_message(&disp, "IDLE");
-    cancel_repeating_timer(&data_acquisition_timer);
+    cancel_repeating_timer(&telemetry_timer);
+    cancel_repeating_timer(&imu_timer);
 
     multicore_fifo_push_blocking(FINISH);
-    multicore_fifo_push_blocking(count);
-    multicore_fifo_push_blocking((uintptr_t)active_buffer);
+    // Flush telemetry
+    multicore_fifo_push_blocking(telemetry_count);
+    multicore_fifo_push_blocking((uintptr_t)active_telemetry_buffer);
+    // Flush IMU
+    multicore_fifo_push_blocking(imu_count);
+    multicore_fifo_push_blocking((uintptr_t)active_imu_buffer);
 }
 
 static void on_sync_data() {
@@ -785,6 +858,7 @@ int main() {
     sleep_ms(3000); // Give time for the tty to get enumerated on the host
 #endif
 
+    // Suspension sensors init
     adc_init();
     fork_sensor.init(&fork_sensor);
     shock_sensor.init(&shock_sensor);
@@ -792,9 +866,18 @@ int main() {
     stdio_uart_init();
 #endif
 
+    // I2C Init
     uint offset = pio_add_program(I2C_PIO, &i2c_program);
     i2c_program_init(I2C_PIO, I2C_SM, offset, PIO_PIN_SDA, PIO_PIN_SDA + 1);
 
+    // IMU init
+    if (lsm6dso_init() != PICO_OK) {
+        setup_display(&disp);
+        display_message(&disp, "IMU ERR");
+        while (true) { tight_loop_contents(); }
+    }
+
+    // DS3231 init
     struct tm tm_now;
     LOG("DS3231", "Initializing RTC\n");
     ds3231_init(&rtc, I2C_PIO, I2C_SM, pio_i2c_write_blocking, pio_i2c_read_blocking);
@@ -804,6 +887,7 @@ int main() {
     LOG("DS3231", "Time: %04d-%02d-%02d %02d:%02d:%02d\n", tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday,
         tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec);
 
+    // Set board time
 #if PICO_RP2040
     // RP2040: use calendar methods (native to RTC hardware)
     if (!aon_timer_start_calendar(&tm_now)) {
@@ -835,6 +919,7 @@ int main() {
     } else {
 #endif
 
+        // Storage init
         display_message(&disp, "INIT STOR");
         multicore_launch_core1(&data_storage_core1);
         int err = (int)multicore_fifo_pop_blocking();

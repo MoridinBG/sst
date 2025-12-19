@@ -16,7 +16,8 @@
         "DISP_PROTO": "PIO_I2C",
         "SPI_MICROSD": "",
         "FORK_LINEAR": "",
-        "SHOCK_LINEAR": ""
+        "SHOCK_LINEAR": "",
+        "IMU_PROTO": "SPI"
       }
     },
     {
@@ -29,7 +30,8 @@
         "DISP_PROTO": "PIO_I2C",
         "SPI_MICROSD": "",
         "FORK_LINEAR": "",
-        "SHOCK_LINEAR": ""
+        "SHOCK_LINEAR": "",
+        "IMU_PROTO": "SPI"
       }
     },
     {
@@ -42,7 +44,8 @@
         "DISP_PROTO": "PIO_I2C",
         "SPI_MICROSD": "",
         "FORK_LINEAR": "",
-        "SHOCK_LINEAR": ""
+        "SHOCK_LINEAR": "",
+        "IMU_PROTO": "SPI"
       }
     },
     {
@@ -55,7 +58,8 @@
         "DISP_PROTO": "PIO_I2C",
         "SPI_MICROSD": "",
         "FORK_LINEAR": "",
-        "SHOCK_LINEAR": ""
+        "SHOCK_LINEAR": "",
+        "IMU_PROTO": "SPI"
       }
     },
     {
@@ -728,6 +732,48 @@
       "inherits": "base-pico2-debug",
       "cacheVariables": {
         "DISP_PROTO": "SPI"
+      }
+    },
+    {
+      "name": "spi_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2",
+      "displayName": "SPI MicroSD, I2C display, AS5600 fork sensor, AS5600 shock sensor, I2C IMU (Pico 2)",
+      "hidden": false,
+      "inherits": "base-pico2-release",
+      "cacheVariables": {
+        "SPI_MICROSD": "ON",
+        "DISP_PROTO": "PIO_I2C",
+        "IMU_PROTO": "I2C"
+      }
+    },
+    {
+      "name": "spi_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2-debug",
+      "displayName": "SPI MicroSD, I2C display, AS5600 fork sensor, AS5600 shock sensor, I2C IMU (Pico 2) (Debug)",
+      "hidden": false,
+      "inherits": "base-pico2-debug",
+      "cacheVariables": {
+        "SPI_MICROSD": "ON",
+        "DISP_PROTO": "PIO_I2C",
+        "IMU_PROTO": "I2C"
+      }
+    },
+    {
+      "name": "sdio_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2",
+      "displayName": "SDIO MicroSD, I2C display, AS5600 fork sensor, AS5600 shock sensor, I2C IMU (Pico 2)",
+      "hidden": false,
+      "inherits": "base-pico2-release",
+      "cacheVariables": {
+        "DISP_PROTO": "PIO_I2C",
+        "IMU_PROTO": "I2C"
+      }
+    },
+    {
+      "name": "sdio_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2-debug",
+      "displayName": "SDIO MicroSD, I2C display, AS5600 fork sensor, AS5600 shock sensor, I2C IMU (Pico 2) (Debug)",
+      "hidden": false,
+      "inherits": "base-pico2-debug",
+      "cacheVariables": {
+        "DISP_PROTO": "PIO_I2C",
+        "IMU_PROTO": "I2C"
       }
     }
   ],
@@ -893,6 +939,16 @@
       "configurePreset": "spi_card-spi_disp-as5600_fork-as5600_shock-pico2-debug"
     },
     {
+      "name": "spi_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2",
+      "displayName": "SPI MicroSD, I2C display, AS5600 fork sensor, AS5600 shock sensor, I2C IMU (Pico 2)",
+      "configurePreset": "spi_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2"
+    },
+    {
+      "name": "spi_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2-debug",
+      "displayName": "SPI MicroSD, I2C display, AS5600 fork sensor, AS5600 shock sensor, I2C IMU (Pico 2) (Debug)",
+      "configurePreset": "spi_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2-debug"
+    },
+    {
       "name": "sdio_card-i2c_disp-linear_fork-linear_shock",
       "displayName": "SDIO MicroSD, I2C display, linear fork sensor, linear shock sensor (Pico)",
       "configurePreset": "sdio_card-i2c_disp-linear_fork-linear_shock"
@@ -1051,6 +1107,16 @@
       "name": "sdio_card-spi_disp-as5600_fork-as5600_shock-pico2-debug",
       "displayName": "SDIO MicroSD, SPI display, AS5600 fork sensor, AS5600 shock sensor (Pico 2) (Debug)",
       "configurePreset": "sdio_card-spi_disp-as5600_fork-as5600_shock-pico2-debug"
+    },
+    {
+      "name": "sdio_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2",
+      "displayName": "SDIO MicroSD, I2C display, AS5600 fork sensor, AS5600 shock sensor, I2C IMU (Pico 2)",
+      "configurePreset": "sdio_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2"
+    },
+    {
+      "name": "sdio_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2-debug",
+      "displayName": "SDIO MicroSD, I2C display, AS5600 fork sensor, AS5600 shock sensor, I2C IMU (Pico 2) (Debug)",
+      "configurePreset": "sdio_card-i2c_disp-as5600_fork-as5600_shock-i2c_imu-pico2-debug"
     }
   ]
 }

@@ -82,4 +82,20 @@
 #define SHOCK_PIN_SCL 15
 #endif // SHOCK_LINEAR
 
+// ----------------------------------------------------------------------------
+// LSM6DSO IMU
+
+#ifdef IMU_SPI
+#define IMU_SPI_INST spi1
+#define IMU_PIN_MISO 12
+#define IMU_PIN_MOSI 11
+#define IMU_PIN_SCK  10
+#define IMU_PIN_CS   13
+#else
+#define IMU_I2C_INST i2c1
+#define IMU_ADDRESS  0x6B
+#define IMU_PIN_SDA  14
+#define IMU_PIN_SCL  15
+#endif
+
 #endif // _HARDWARE_CONFIG_H

@@ -29,8 +29,8 @@
 #include "../net/tcpserver.h"
 #include "../ntp//ntp.h"
 #include "../rtc//ds3231.h"
-#include "../sensor/lsm6dso.h"
-#include "../sensor/sensor.h"
+#include "../sensor/imu/lsm6dso.h"
+#include "../sensor/travel/travel_sensor.h"
 #include "../util/config.h"
 #include "../util/list.h"
 #include "../util/log.h"
@@ -53,8 +53,8 @@ static struct tcpserver server;
 
 struct ds3231 rtc;
 
-extern struct sensor fork_sensor;
-extern struct sensor shock_sensor;
+extern struct travel_sensor fork_sensor;
+extern struct travel_sensor shock_sensor;
 
 // ----------------------------------------------------------------------------
 // Helper functions

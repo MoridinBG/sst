@@ -28,9 +28,9 @@ add_executable(sufni-suspension-telemetry
     src/ui/pushbutton.c
     src/util/config.c
     src/util/list.c
-    src/sensor/rotational.c
-    src/sensor/linear.c
-    src/sensor/lsm6dso.c
+    src/sensor/travel/rotational.c
+    src/sensor/travel/linear.c
+    src/sensor/imu/lsm6dso.c
 )
 
 if(NOT USB_UART_DEBUG)

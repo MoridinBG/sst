@@ -23,15 +23,15 @@ union comm {
     struct adc_comm adc;
 };
 
-struct sensor {
+struct travel_sensor {
     union comm comm;
     volatile bool available;
     uint16_t baseline;
     bool inverted;
-    void (*init)(struct sensor *sensor);
-    bool (*check_availability)(struct sensor *sensor);
-    bool (*start)(struct sensor *sensor, uint16_t baseline, bool inverted);
-    void (*calibrate_expanded)(struct sensor *sensor);
-    void (*calibrate_compressed)(struct sensor *sensor);
-    uint16_t (*measure)(struct sensor *sensor);
+    void (*init)(struct travel_sensor *sensor);
+    bool (*check_availability)(struct travel_sensor *sensor);
+    bool (*start)(struct travel_sensor *sensor, uint16_t baseline, bool inverted);
+    void (*calibrate_expanded)(struct travel_sensor *sensor);
+    void (*calibrate_compressed)(struct travel_sensor *sensor);
+    uint16_t (*measure)(struct travel_sensor *sensor);
 };

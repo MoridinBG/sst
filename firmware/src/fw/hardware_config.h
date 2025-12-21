@@ -93,7 +93,11 @@
 #define IMU_PIN_CS   13
 #else
 #define IMU_I2C_INST i2c1
+#ifdef IMU_MODEL_MPU6050
+#define IMU_ADDRESS  0x68
+#else
 #define IMU_ADDRESS  0x6B
+#endif
 #define IMU_PIN_SDA  14
 #define IMU_PIN_SCL  15
 #endif

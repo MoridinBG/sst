@@ -31,9 +31,18 @@ add_executable(sufni-suspension-telemetry
     src/sensor/travel/rotational.c
     src/sensor/travel/linear.c
     src/sensor/imu/imu_sensor.c
-    src/sensor/imu/lsm6dso.c
-    src/sensor/imu/mpu6050.c
 )
+
+if(NOT IMU_MODEL)
+    set(IMU_MODEL "NONE")
+endif()
+
+if(NOT IMU_MODEL STREQUAL "NONE")
+    target_sources(sufni-suspension-telemetry PRIVATE
+        src/sensor/imu/lsm6dso.c
+        src/sensor/imu/mpu6050.c
+    )
+endif()
 
 if(NOT USB_UART_DEBUG)
     target_sources(sufni-suspension-telemetry PRIVATE
@@ -74,21 +83,21 @@ if(${SHOCK_LINEAR})
     )
 endif()
 
-if(NOT IMU_MODEL)
-    set(IMU_MODEL "LSM6DSO")
-endif()
-
 if(IMU_MODEL STREQUAL "LSM6DSO")
     target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_MODEL_LSM6DSO)
 elseif(IMU_MODEL STREQUAL "MPU6050")
     target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_MODEL_MPU6050)
+else()
+    target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_MODEL_NONE)
 endif()
 
-if(IMU_PROTO STREQUAL "I2C")
-    target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_I2C)
-else()
-    target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_SPI)
-    target_link_libraries(sufni-suspension-telemetry hardware_spi)
+if(NOT IMU_MODEL STREQUAL "NONE")
+    if(IMU_PROTO STREQUAL "I2C")
+        target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_I2C)
+    else()
+        target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_SPI)
+        target_link_libraries(sufni-suspension-telemetry hardware_spi)
+    endif()
 endif()
 
 target_include_directories(sufni-suspension-telemetry PUBLIC

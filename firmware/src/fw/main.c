@@ -30,8 +30,10 @@
 #include "../ntp//ntp.h"
 #include "../rtc//ds3231.h"
 #include "../sensor/imu/imu_sensor.h"
+#ifndef IMU_MODEL_NONE
 #include "../sensor/imu/lsm6dso.h"
 #include "../sensor/imu/mpu6050.h"
+#endif
 #include "../sensor/travel/travel_sensor.h"
 #include "../util/config.h"
 #include "../util/list.h"
@@ -58,6 +60,9 @@ struct ds3231 rtc;
 extern struct travel_sensor fork_sensor;
 extern struct travel_sensor shock_sensor;
 
+#ifdef IMU_MODEL_NONE
+struct imu_sensor imu_sensor = {.available = false};
+#else
 struct imu_sensor imu_sensor = {
 #ifdef IMU_SPI
     .protocol = IMU_PROTOCOL_SPI,
@@ -92,6 +97,7 @@ struct imu_sensor imu_sensor = {
     .read_raw = lsm6dso_read_raw,
     .read_temperature = lsm6dso_read_temperature,
     .temperature_celsius = lsm6dso_temperature_celsius};
+#endif
 #endif
 
 // ----------------------------------------------------------------------------

@@ -163,7 +163,7 @@ static void calibrate_if_needed() {
 
     if (fr != FR_OK || button_pressed) {
         LOG("CAL", "Entering calibration mode\n");
-        state = CAL_IDLE_1;
+        state = CAL_TRVL_IDLE_1;
     } else {
         LOG("CAL", "Skipping calibration\n");
         state = IDLE;
@@ -469,7 +469,7 @@ static void setup_display(ssd1306_t *disp) {
 // ----------------------------------------------------------------------------
 // State handlers
 
-static void on_cal_idle() {
+static void on_cal_trvl_idle() {
     // No MSC if there is no USB cable connected, so checking
     // tud is not necessary.
     bool battery = on_battery();
@@ -503,7 +503,7 @@ static void on_cal_idle() {
 
         ssd1306_clear(&disp);
         ssd1306_draw_string(&disp, 96, 0, 1, battery_str);
-        ssd1306_draw_string(&disp, 0, 0, 2, state == CAL_IDLE_1 ? "CAL EXP" : "CAL COMP");
+        ssd1306_draw_string(&disp, 0, 0, 2, state == CAL_TRVL_IDLE_1 ? "CAL EXP" : "CAL COMP");
         if (fork_sensor.check_availability(&fork_sensor)) {
             ssd1306_draw_string(&disp, 0, 24, 1, "fork");
         }
@@ -514,7 +514,7 @@ static void on_cal_idle() {
     }
 }
 
-static void on_cal_exp() {
+static void on_cal_trvl_exp() {
     LOG("CAL", "Calibrating expanded position\n");
     fork_sensor.calibrate_expanded(&fork_sensor);
     shock_sensor.calibrate_expanded(&shock_sensor);
@@ -525,15 +525,15 @@ static void on_cal_exp() {
         LOG("CAL", "Error: Both sensors failed calibration\n");
         display_message(&disp, "CAL ERR");
         sleep_ms(1000);
-        state = CAL_IDLE_1;
+        state = CAL_TRVL_IDLE_1;
         return;
     }
 
     LOG("CAL", "Expanded calibration complete\n");
-    state = CAL_IDLE_2;
+    state = CAL_TRVL_IDLE_2;
 }
 
-static void on_cal_comp() {
+static void on_cal_trvl_comp() {
     LOG("CAL", "Calibrating compressed position\n");
     fork_sensor.calibrate_compressed(&fork_sensor);
     shock_sensor.calibrate_compressed(&shock_sensor);
@@ -794,19 +794,24 @@ static void on_serve_tcp() {
 }
 
 static void (*state_handlers[STATES_COUNT])() = {
-    on_idle,      /* IDLE */
-    on_sleep,     /* SLEEP */
-    on_waking,    /* WAKING */
-    on_rec_start, /* REC_START */
-    dummy,        /* RECORD */
-    on_rec_stop,  /* REC_STOP */
-    on_sync_data, /* SYNC_DATA */
-    on_serve_tcp, /* SERVE_TCP */
-    on_msc,       /* MSC */
-    on_cal_idle,  /* CAL_IDLE_1 */
-    on_cal_exp,   /* CAL_EXP */
-    on_cal_idle,  /* CAL_IDLE_2 */
-    on_cal_comp,  /* CAL_COMP */
+    on_idle,               /* IDLE */
+    on_sleep,              /* SLEEP */
+    on_waking,             /* WAKING */
+    on_rec_start,          /* REC_START */
+    dummy,                 /* RECORD */
+    on_rec_stop,           /* REC_STOP */
+    on_sync_data,          /* SYNC_DATA */
+    on_serve_tcp,          /* SERVE_TCP */
+    on_msc,                /* MSC */
+    on_cal_trvl_idle,      /* CAL_TRVL_IDLE_1 */
+    on_cal_trvl_exp,       /* CAL_TRVL_EXP */
+    on_cal_trvl_idle,      /* CAL_TRVL_IDLE_2 */
+    on_cal_trvl_comp,      /* CAL_TRVL_COMP */
+    on_cal_imu_idle,       /* CAL_IMU_IDLE_1 */
+    on_cal_imu_stationary, /* CAL_IMU_STATIONARY */
+    on_cal_imu_idle,       /* CAL_IMU_IDLE_2 */
+    on_cal_imu_forward,    /* CAL_IMU_FORWARD */
+    on_cal_imu_done,       /* CAL_IMU_DONE */
 };
 
 // ----------------------------------------------------------------------------
@@ -814,11 +819,20 @@ static void (*state_handlers[STATES_COUNT])() = {
 
 static void on_left_press(void *user_data) {
     switch (state) {
-        case CAL_IDLE_1:
-            state = CAL_EXP;
+        case CAL_TRVL_IDLE_1:
+            state = CAL_TRVL_EXP;
             break;
-        case CAL_IDLE_2:
-            state = CAL_COMP;
+        case CAL_TRVL_IDLE_2:
+            state = CAL_TRVL_COMP;
+            break;
+        case CAL_IMU_IDLE_1:
+            state = CAL_IMU_STATIONARY;
+            break;
+        case CAL_IMU_IDLE_2:
+            state = CAL_IMU_FORWARD;
+            break;
+        case CAL_IMU_FORWARD:
+            state = CAL_IMU_DONE;
             break;
         case IDLE:
             state = REC_START;

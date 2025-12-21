@@ -54,6 +54,8 @@ struct imu_calibration {
     int16_t cal_temperature;
 };
 
+_Static_assert(sizeof(struct imu_rotation) == 36, "imu_rotation size mismatch");
+
 // Default calibration (identity rotation, zero bias)
 #define IMU_CALIBRATION_DEFAULT                                                                                        \
     {.gyro_bias = {0, 0, 0},                                                                                           \

@@ -54,7 +54,9 @@ struct record {
 struct imu_record {
     int16_t ax, ay, az;
     int16_t gx, gy, gz;
-} __attribute__((packed));
+};
+
+_Static_assert(sizeof(struct imu_record) == 12, "imu_record size mismatch");
 
 enum command { OPEN, DUMP_TELEMETRY, DUMP_IMU, FINISH, MARKER };
 

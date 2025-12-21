@@ -67,15 +67,15 @@ void imu_sensor_read(struct imu_sensor *imu, int16_t *ax, int16_t *ay, int16_t *
     }
 
     // Apply rotation matrix: bike = R x sensor
-    float *R = &imu->calibration.rotation.matrix[0][0];
+    float (*R)[3] = imu->calibration.rotation.matrix;
 
-    *ax = (int16_t)(R[0] * a[0] + R[1] * a[1] + R[2] * a[2]);
-    *ay = (int16_t)(R[3] * a[0] + R[4] * a[1] + R[5] * a[2]);
-    *az = (int16_t)(R[6] * a[0] + R[7] * a[1] + R[8] * a[2]);
+    *ax = (int16_t)(R[0][0] * a[0] + R[0][1] * a[1] + R[0][2] * a[2]);
+    *ay = (int16_t)(R[1][0] * a[0] + R[1][1] * a[1] + R[1][2] * a[2]);
+    *az = (int16_t)(R[2][0] * a[0] + R[2][1] * a[1] + R[2][2] * a[2]);
 
-    *gx = (int16_t)(R[0] * g[0] + R[1] * g[1] + R[2] * g[2]);
-    *gy = (int16_t)(R[3] * g[0] + R[4] * g[1] + R[5] * g[2]);
-    *gz = (int16_t)(R[6] * g[0] + R[7] * g[1] + R[8] * g[2]);
+    *gx = (int16_t)(R[0][0] * g[0] + R[0][1] * g[1] + R[0][2] * g[2]);
+    *gy = (int16_t)(R[1][0] * g[0] + R[1][1] * g[1] + R[1][2] * g[2]);
+    *gz = (int16_t)(R[2][0] * g[0] + R[2][1] * g[1] + R[2][2] * g[2]);
 }
 
 float imu_sensor_get_temperature_celsius(struct imu_sensor *imu) {

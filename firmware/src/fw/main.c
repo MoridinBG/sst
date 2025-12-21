@@ -29,6 +29,7 @@
 #include "../net/tcpserver.h"
 #include "../ntp//ntp.h"
 #include "../rtc//ds3231.h"
+#include "../sensor/imu/imu_sensor.h"
 #include "../sensor/imu/lsm6dso.h"
 #include "../sensor/travel/travel_sensor.h"
 #include "../util/config.h"
@@ -55,6 +56,28 @@ struct ds3231 rtc;
 
 extern struct travel_sensor fork_sensor;
 extern struct travel_sensor shock_sensor;
+
+struct imu_sensor imu_sensor = {
+#ifdef IMU_SPI
+    .protocol = IMU_PROTOCOL_SPI,
+    .comm.spi = {IMU_SPI_INST, IMU_PIN_CS, IMU_PIN_SCK, IMU_PIN_MOSI, IMU_PIN_MISO},
+#else
+    .protocol = IMU_PROTOCOL_I2C,
+    .comm.i2c = {IMU_I2C_INST, IMU_ADDRESS, IMU_PIN_SDA, IMU_PIN_SCL},
+#endif
+    .type = IMU_TYPE_LSM6DSO,
+    .available = false,
+    .calibration = IMU_CALIBRATION_DEFAULT,
+    .gyro_temp_coeff = LSM6DSO_GYRO_TEMP_COEFF,
+    .accel_temp_coeff = LSM6DSO_ACCEL_TEMP_COEFF,
+    .temp_scale = LSM6DSO_TEMP_SCALE,
+    .temp_offset = LSM6DSO_TEMP_OFFSET,
+    .init = lsm6dso_init,
+    .check_availability = lsm6dso_check_availability,
+    .read_raw = lsm6dso_read_raw,
+    .read_temperature = lsm6dso_read_temperature,
+    .temperature_celsius = lsm6dso_temperature_celsius
+};
 
 // ----------------------------------------------------------------------------
 // Helper functions

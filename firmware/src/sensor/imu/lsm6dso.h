@@ -23,4 +23,10 @@ int16_t lsm6dso_read_temperature(struct imu_sensor *imu);
 // Convert the raw value to degrees celsius
 float lsm6dso_temperature_celsius(struct imu_sensor *imu);
 
+// Device specific constants
+#define LSM6DSO_GYRO_TEMP_COEFF  0.328f // LSB/degC
+#define LSM6DSO_ACCEL_TEMP_COEFF 0.41f  // LSB/degC
+#define LSM6DSO_TEMP_SCALE       256.0f // LSB/degC
+#define LSM6DSO_TEMP_OFFSET      25.0f  // degC at 0
+
 #endif // LSM6DSO_H

@@ -264,26 +264,64 @@ static bool start_sensors() {
 
     FIL calibration_fil;
     FRESULT fr = f_open(&calibration_fil, "CALIBRATION", FA_OPEN_EXISTING | FA_READ);
-    if (!(fr == FR_OK || fr == FR_EXIST)) {
+    if (fr != FR_OK) {
+        LOG("CAL", "No CALIBRATION file found\n");
+        return false;
+    }
+
+    FSIZE_t file_size = f_size(&calibration_fil);
+    if (file_size != 7 && file_size != 58) {
+        LOG("CAL", "Invalid calibration file size: %u\n", (uint)file_size);
+        f_close(&calibration_fil);
         return false;
     }
 
     uint br;
-    uint16_t baseline;
-    bool inverted;
-    f_read(&calibration_fil, &baseline, sizeof(uint16_t), &br);
-    f_read(&calibration_fil, &inverted, sizeof(bool), &br);
-    fork_sensor.start(&fork_sensor, baseline, inverted);
-    LOG("SENSOR", "Fork sensor: baseline=0x%04x, inverted=%d, available=%d\n", baseline, inverted,
-        fork_sensor.available);
+    uint8_t magic;
+    f_read(&calibration_fil, &magic, 1, &br);
+    if (magic != 'T') {
+        LOG("CAL", "Invalid telemetry magic: 0x%02x\n", magic);
+        f_close(&calibration_fil);
+        return false;
+    }
 
-    f_read(&calibration_fil, &baseline, sizeof(uint16_t), &br);
-    f_read(&calibration_fil, &inverted, sizeof(bool), &br);
-    shock_sensor.start(&shock_sensor, baseline, inverted);
-    LOG("SENSOR", "Shock sensor: baseline=0x%04x, inverted=%d, available=%d\n", baseline, inverted,
-        shock_sensor.available);
+    uint16_t f_base, s_base;
+    uint8_t f_inv_u8, s_inv_u8;
+    f_read(&calibration_fil, &f_base, 2, &br);
+    f_read(&calibration_fil, &f_inv_u8, 1, &br);
+    f_read(&calibration_fil, &s_base, 2, &br);
+    f_read(&calibration_fil, &s_inv_u8, 1, &br);
+
+    if (file_size == 58) {
+        f_read(&calibration_fil, &magic, 1, &br);
+        if (magic != 'I') {
+            LOG("CAL", "Invalid IMU magic: 0x%02x\n", magic);
+            f_close(&calibration_fil);
+            return false;
+        }
+        f_read(&calibration_fil, &imu_sensor.calibration.gyro_bias, 6, &br);
+        f_read(&calibration_fil, &imu_sensor.calibration.accel_bias, 6, &br);
+        f_read(&calibration_fil, &imu_sensor.calibration.rotation, 36, &br);
+        f_read(&calibration_fil, &imu_sensor.calibration.cal_temperature, 2, &br);
+        LOG("CAL", "IMU calibration loaded\n");
+        LOG("CAL", "Rotation matrix:\n");
+        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[0][0],
+            (double)imu_sensor.calibration.rotation.matrix[0][1], (double)imu_sensor.calibration.rotation.matrix[0][2]);
+        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[1][0],
+            (double)imu_sensor.calibration.rotation.matrix[1][1], (double)imu_sensor.calibration.rotation.matrix[1][2]);
+        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[2][0],
+            (double)imu_sensor.calibration.rotation.matrix[2][1], (double)imu_sensor.calibration.rotation.matrix[2][2]);
+    }
 
     f_close(&calibration_fil);
+
+    fork_sensor.start(&fork_sensor, f_base, f_inv_u8 != 0);
+    shock_sensor.start(&shock_sensor, s_base, s_inv_u8 != 0);
+
+    LOG("CAL", "Fork sensor: baseline=0x%04x, inverted=%d, available=%d\n", f_base, f_inv_u8, fork_sensor.available);
+    LOG("SENSOR", "Shock sensor: baseline=0x%04x, inverted=%d, available=%d\n", s_base, s_inv_u8,
+        shock_sensor.available);
+
     return fork_sensor.available || shock_sensor.available;
 }
 
@@ -542,23 +580,35 @@ static void on_cal_trvl_comp() {
     LOG("CAL", "Shock: baseline=0x%04x inverted=%d\n", shock_sensor.baseline, shock_sensor.inverted);
 
     FIL calibration_fil;
-    FRESULT fr = f_open(&calibration_fil, "CALIBRATION", FA_OPEN_ALWAYS | FA_WRITE);
-    if (!(fr == FR_OK || fr == FR_EXIST)) {
+    FRESULT fr = f_open(&calibration_fil, "CALIBRATION", FA_CREATE_ALWAYS | FA_WRITE);
+    if (fr != FR_OK) {
         LOG("CAL", "Error: Failed to open CALIBRATION file\n");
         display_message(&disp, "CAL ERR");
         sleep_ms(1000);
-        state = CAL_IDLE_2;
+        state = CAL_TRVL_IDLE_2;
         return;
     }
 
     uint bw;
-    f_write(&calibration_fil, &fork_sensor.baseline, sizeof(uint16_t), &bw);
-    f_write(&calibration_fil, (const void *)&fork_sensor.inverted, sizeof(bool), &bw);
-    f_write(&calibration_fil, &shock_sensor.baseline, sizeof(uint16_t), &bw);
-    f_write(&calibration_fil, (const void *)&shock_sensor.inverted, sizeof(bool), &bw);
+    uint8_t magic = 'T';
+    f_write(&calibration_fil, &magic, 1, &bw);
+    f_write(&calibration_fil, &fork_sensor.baseline, 2, &bw);
+    uint8_t f_inv = fork_sensor.inverted ? 1 : 0;
+    f_write(&calibration_fil, &f_inv, 1, &bw);
+    f_write(&calibration_fil, &shock_sensor.baseline, 2, &bw);
+    uint8_t s_inv = shock_sensor.inverted ? 1 : 0;
+    f_write(&calibration_fil, &s_inv, 1, &bw);
     f_close(&calibration_fil);
 
     LOG("CAL", "Calibration saved successfully\n");
+
+    if (imu_sensor.available) {
+        state = CAL_IMU_IDLE_1;
+    } else {
+        state = IDLE;
+    }
+}
+
 static void on_cal_imu_idle() {
     static absolute_time_t timeout = {0};
     if (absolute_time_diff_us(get_absolute_time(), timeout) < 0) {

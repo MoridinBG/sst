@@ -41,7 +41,8 @@ static void read_registers(struct imu_sensor *imu, uint8_t reg, uint8_t *buf, si
 
 void mpu6050_init(struct imu_sensor *imu) {
     if (imu->protocol == IMU_PROTOCOL_I2C) {
-        i2c_init(imu->comm.i2c.instance, 400000); // MPU6050 usually runs at 400kHz
+        // MPU6050 usually runs at 400kHz, but my unit appears to init & read fine @1Mhz
+        i2c_init(imu->comm.i2c.instance, 1000000);
         gpio_set_function(imu->comm.i2c.sda_gpio, GPIO_FUNC_I2C);
         gpio_set_function(imu->comm.i2c.scl_gpio, GPIO_FUNC_I2C);
         gpio_pull_up(imu->comm.i2c.sda_gpio);

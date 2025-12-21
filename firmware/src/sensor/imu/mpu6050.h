@@ -24,8 +24,8 @@ int16_t mpu6050_read_temperature(struct imu_sensor *imu);
 float mpu6050_temperature_celsius(struct imu_sensor *imu);
 
 // Device specific constants
-#define MPU6050_GYRO_TEMP_COEFF  0.0f   // Not specified in simple terms
-#define MPU6050_ACCEL_TEMP_COEFF 0.0f   // Not specified in simple terms
+#define MPU6050_GYRO_TEMP_COEFF  0.0f   // Very different from unit to unit. You have to calculate yours
+#define MPU6050_ACCEL_TEMP_COEFF 0.0f   // Very different from unit to unit. You have to calculate yours
 #define MPU6050_TEMP_SCALE       340.0f // LSB/degC
 #define MPU6050_TEMP_OFFSET      36.53f // degC at 0 LSB (based on formula T = R/340 + 36.53)
 

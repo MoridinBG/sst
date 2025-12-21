@@ -91,7 +91,7 @@ void lsm6dso_init(struct imu_sensor *imu) {
     }
 
     if (imu->protocol == IMU_PROTOCOL_SPI) {
-        write_register(imu, CTRL4_C, 0x04);
+        write_register(imu, CTRL4_C, 0x04); // Disable I2C
     }
 
     write_register(imu, CTRL3_C, 0x44);
@@ -132,7 +132,7 @@ void lsm6dso_read_raw(struct imu_sensor *imu, int16_t raw[6]) {
 
 int16_t lsm6dso_read_temperature(struct imu_sensor *imu) {
     uint8_t buffer[2];
-    read_registers(imu, OUT_TEMP_L, buffer, 2);
+    read_registers(imu, OUT_TEMP_L, buffer, 2); // Reads both OUT_TEMP_L & OUT_TEMP_H
     return (int16_t)(buffer[1] << 8 | buffer[0]);
 }
 

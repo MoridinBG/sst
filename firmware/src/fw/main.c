@@ -837,7 +837,7 @@ static void on_idle() {
 
     static absolute_time_t timeout = {0};
     if (absolute_time_diff_us(get_absolute_time(), timeout) < 0) {
-        timeout = make_timeout_time_ms(600);
+        timeout = make_timeout_time_ms(1000);
 
         uint8_t voltage_percentage = ((read_voltage() - BATTERY_MIN_V) / BATTERY_RANGE) * 100;
         static char battery_str[] = " PWR";

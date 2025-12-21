@@ -6,6 +6,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// Sensor Types
+enum imu_type {
+    IMU_TYPE_LSM6DSO,
+    IMU_TYPE_MPU6050,
+};
+
 // Communication Protocol Abstraction
 enum imu_protocol {
     IMU_PROTOCOL_I2C,
@@ -48,6 +54,10 @@ struct imu_calibration {
     int16_t accel_bias[3];
 
     // Rotation matrix: sensor frame -> bike frame
+    // Adjusts the sensor readings so:
+    //  - X going positive is bike forward
+    //  - Y going positive is bike left (brake side)
+    //  - Z going positive is bike up
     struct imu_rotation rotation;
 
     // Temperature at calibration (raw sensor units)
@@ -63,58 +73,12 @@ _Static_assert(sizeof(struct imu_rotation) == 36, "imu_rotation size mismatch");
      .rotation = {.matrix = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}},                                                        \
      .cal_temperature = 0}
 
-// Sensor Types
-enum imu_type {
-    IMU_TYPE_LSM6DSO,
-    IMU_TYPE_MPU6050,
-};
-
-// Interpretation state enums
-enum imu_pitch_state {
-    IMU_PITCH_LEVEL,
-    IMU_PITCH_FRONT_UP,
-    IMU_PITCH_FRONT_DOWN,
-};
-
-enum imu_roll_state {
-    IMU_ROLL_LEVEL,
-    IMU_ROLL_LEFT,
-    IMU_ROLL_RIGHT,
-};
-
-// Interpretation result struct
-struct imu_interpretation {
-    // Acceleration in g units (bike frame)
-    float accel_forward_g;
-    float accel_left_g;
-    float accel_up_g;
-
-    // Tilt angles in degrees
-    float pitch_deg;
-    float roll_deg;
-
-    // Rotation rates in degrees per second
-    float yaw_rate_dps;
-    float pitch_rate_dps;
-    float roll_rate_dps;
-
-    // State flags
-    enum imu_pitch_state pitch_state;
-    enum imu_roll_state roll_state;
-    bool is_rotating;
-    bool is_accelerating;
-};
-
 // Main IMU Sensor Struct
 struct imu_sensor {
-    // Communication
+    enum imu_type type;
     enum imu_protocol protocol;
     union imu_comm comm;
 
-    // Sensor type
-    enum imu_type type;
-
-    // State
     volatile bool available;
     struct imu_calibration calibration;
 
@@ -140,6 +104,42 @@ struct imu_sensor {
     void (*calibrate_forward)(struct imu_sensor *imu);
 };
 
+// Interpretation state enums
+enum imu_pitch_state {
+    IMU_PITCH_LEVEL,
+    IMU_PITCH_FRONT_UP,
+    IMU_PITCH_FRONT_DOWN,
+};
+
+enum imu_roll_state {
+    IMU_ROLL_LEVEL,
+    IMU_ROLL_LEFT,
+    IMU_ROLL_RIGHT,
+};
+
+// Interpretation result struct. Used for debugging
+struct imu_interpretation {
+    // Acceleration in g units (bike frame)
+    float accel_forward_g;
+    float accel_left_g;
+    float accel_up_g;
+
+    // Tilt angles in degrees (accelerometer based, so no yaw)
+    float pitch_deg;
+    float roll_deg;
+
+    // Rotation rates in degrees per second (gyro based)
+    float yaw_rate_dps;
+    float pitch_rate_dps;
+    float roll_rate_dps;
+
+    // State flags
+    enum imu_pitch_state pitch_state;
+    enum imu_roll_state roll_state;
+    bool is_rotating;
+    bool is_accelerating;
+};
+
 // API Functions
 
 // Initialize the IMU sensor
@@ -154,7 +154,7 @@ bool imu_sensor_available(struct imu_sensor *imu);
 // - Records gravity vector for orientation calibration
 void imu_sensor_calibrate_stationary(struct imu_sensor *imu);
 
-// Phase 2 calibration: Call while bike is tilted front-up
+// Phase 2 calibration: Call while bike is tilted front-up (on rear tire)
 // - Samples gravity while tilted
 // - Computes forward direction from gravity shift
 // - Builds rotation matrix

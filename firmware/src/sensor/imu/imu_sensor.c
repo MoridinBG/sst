@@ -84,40 +84,7 @@ float imu_sensor_get_temperature_celsius(struct imu_sensor *imu) {
     return 0.0f;
 }
 
-void imu_sensor_calibrate_stationary(struct imu_sensor *imu) {
-    int32_t gyro_sum[3] = {0};
-    int32_t accel_sum[3] = {0};
-
-    // Record temperature at start of calibration
-    if (imu->read_temperature) {
-        imu->calibration.cal_temperature = imu->read_temperature(imu);
-    }
-
-    for (int i = 0; i < 100; i++) {
-        int16_t raw[6];
-        if (imu->read_raw) {
-            imu->read_raw(imu, raw);
-        } else {
-            memset(raw, 0, sizeof(raw));
-        }
-        accel_sum[0] += raw[0]; // ax
-        accel_sum[1] += raw[1]; // ay
-        accel_sum[2] += raw[2]; // az
-        gyro_sum[0] += raw[3];  // gx
-        gyro_sum[1] += raw[4];  // gy
-        gyro_sum[2] += raw[5];  // gz
-        sleep_ms(10);
-    }
-
-    imu->calibration.gyro_bias[0] = gyro_sum[0] / 100;
-    imu->calibration.gyro_bias[1] = gyro_sum[1] / 100;
-    imu->calibration.gyro_bias[2] = gyro_sum[2] / 100;
-
-    // Store gravity vector (will be normalized later)
-    g_sensor[0] = accel_sum[0] / 100.0f;
-    g_sensor[1] = accel_sum[1] / 100.0f;
-    g_sensor[2] = accel_sum[2] / 100.0f;
-}
+// Calibration
 
 static void normalize(float *v, float *out) {
     float mag = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
@@ -168,11 +135,48 @@ static void build_rotation_matrix(float g_sensor[3], float f_sensor[3], struct i
     }
 }
 
+#define CALIBRATION_SAMPLES 100
+
+void imu_sensor_calibrate_stationary(struct imu_sensor *imu) {
+    int32_t gyro_sum[3] = {0};
+    int32_t accel_sum[3] = {0};
+
+    // Record temperature at start of calibration
+    if (imu->read_temperature) {
+        imu->calibration.cal_temperature = imu->read_temperature(imu);
+    }
+
+    for (int i = 0; i < CALIBRATION_SAMPLES; i++) {
+        int16_t raw[6];
+        if (imu->read_raw) {
+            imu->read_raw(imu, raw);
+        } else {
+            memset(raw, 0, sizeof(raw));
+        }
+        accel_sum[0] += raw[0]; // ax
+        accel_sum[1] += raw[1]; // ay
+        accel_sum[2] += raw[2]; // az
+        gyro_sum[0] += raw[3];  // gx
+        gyro_sum[1] += raw[4];  // gy
+        gyro_sum[2] += raw[5];  // gz
+        sleep_ms(10);
+    }
+
+    imu->calibration.gyro_bias[0] = gyro_sum[0] / CALIBRATION_SAMPLES;
+    imu->calibration.gyro_bias[1] = gyro_sum[1] / CALIBRATION_SAMPLES;
+    imu->calibration.gyro_bias[2] = gyro_sum[2] / CALIBRATION_SAMPLES;
+
+    // Store gravity vector (will be normalized later)
+    g_sensor[0] = accel_sum[0] / (float)CALIBRATION_SAMPLES;
+    g_sensor[1] = accel_sum[1] / (float)CALIBRATION_SAMPLES;
+    g_sensor[2] = accel_sum[2] / (float)CALIBRATION_SAMPLES;
+}
+
 void imu_sensor_calibrate_tilted(struct imu_sensor *imu) {
     // Sample gravity while bike is tilted front-up
     int32_t accel_sum[3] = {0};
 
-    for (int i = 0; i < 50; i++) {
+    for (int i = 0; i < CALIBRATION_SAMPLES; i++) {
         int16_t raw[6];
         if (imu->read_raw) {
             imu->read_raw(imu, raw);
@@ -186,9 +190,9 @@ void imu_sensor_calibrate_tilted(struct imu_sensor *imu) {
     }
 
     float g_tilted[3];
-    g_tilted[0] = accel_sum[0] / 50.0f;
-    g_tilted[1] = accel_sum[1] / 50.0f;
-    g_tilted[2] = accel_sum[2] / 50.0f;
+    g_tilted[0] = accel_sum[0] / (float)CALIBRATION_SAMPLES;
+    g_tilted[1] = accel_sum[1] / (float)CALIBRATION_SAMPLES;
+    g_tilted[2] = accel_sum[2] / (float)CALIBRATION_SAMPLES;
 
     // When front is up, accelerometer reaction tilts forward
     // Difference (tilted - level) points forward

@@ -1,8 +1,8 @@
 #include "imu_sensor.h"
 #include <math.h>
+#include <pico/stdlib.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pico/stdlib.h>
 
 // Gravity vector from stationary calibration (used by tilt calibration)
 static float g_sensor[3];
@@ -198,4 +198,79 @@ void imu_sensor_calibrate_tilted(struct imu_sensor *imu) {
     f_sensor[2] = g_tilted[2] - g_sensor[2];
 
     build_rotation_matrix(g_sensor, f_sensor, &imu->calibration.rotation);
+}
+
+#define LEVEL_THRESHOLD_DEG      5.0f
+#define STATIONARY_THRESHOLD_DPS 10.0f
+#define ACCEL_THRESHOLD_G        0.05f
+#define INTERPRET_SAMPLES        16
+
+void imu_sensor_interpret(struct imu_sensor *imu, struct imu_interpretation *result) {
+    int32_t ax_sum = 0, ay_sum = 0, az_sum = 0;
+    int32_t gx_sum = 0, gy_sum = 0, gz_sum = 0;
+
+    for (int i = 0; i < INTERPRET_SAMPLES; i++) {
+        int16_t ax, ay, az, gx, gy, gz;
+        imu_sensor_read(imu, &ax, &ay, &az, &gx, &gy, &gz);
+        ax_sum += ax;
+        ay_sum += ay;
+        az_sum += az;
+        gx_sum += gx;
+        gy_sum += gy;
+        gz_sum += gz;
+        sleep_ms(10);
+    }
+
+    float ax_avg = ax_sum / (float)INTERPRET_SAMPLES;
+    float ay_avg = ay_sum / (float)INTERPRET_SAMPLES;
+    float az_avg = az_sum / (float)INTERPRET_SAMPLES;
+    float gx_avg = gx_sum / (float)INTERPRET_SAMPLES;
+    float gy_avg = gy_sum / (float)INTERPRET_SAMPLES;
+    float gz_avg = gz_sum / (float)INTERPRET_SAMPLES;
+
+    // Convert acceleration to g units
+    result->accel_forward_g = ax_avg / imu->accel_lsb_per_g;
+    result->accel_left_g = ay_avg / imu->accel_lsb_per_g;
+    result->accel_up_g = az_avg / imu->accel_lsb_per_g;
+
+    // Calculate pitch and roll from accelerometer
+    // pitch = atan2(ax, az) - positive = nose up
+    // roll = atan2(ay, az) - positive = tilted right
+    float pitch_rad = atan2f(ax_avg, az_avg);
+    float roll_rad = atan2f(ay_avg, az_avg);
+    result->pitch_deg = pitch_rad * 180.0f / (float)M_PI;
+    result->roll_deg = roll_rad * 180.0f / (float)M_PI;
+
+    // Convert gyro to degrees per second
+    result->roll_rate_dps = gx_avg / imu->gyro_lsb_per_dps;   // rotation around X (forward)
+    result->pitch_rate_dps = gy_avg / imu->gyro_lsb_per_dps;  // rotation around Y (left)
+    result->yaw_rate_dps = gz_avg / imu->gyro_lsb_per_dps;    // rotation around Z (up)
+
+    // Determine pitch state
+    if (result->pitch_deg > LEVEL_THRESHOLD_DEG) {
+        result->pitch_state = IMU_PITCH_NOSE_UP;
+    } else if (result->pitch_deg < -LEVEL_THRESHOLD_DEG) {
+        result->pitch_state = IMU_PITCH_NOSE_DOWN;
+    } else {
+        result->pitch_state = IMU_PITCH_LEVEL;
+    }
+
+    // Determine roll state
+    if (result->roll_deg > LEVEL_THRESHOLD_DEG) {
+        result->roll_state = IMU_ROLL_RIGHT;
+    } else if (result->roll_deg < -LEVEL_THRESHOLD_DEG) {
+        result->roll_state = IMU_ROLL_LEFT;
+    } else {
+        result->roll_state = IMU_ROLL_LEVEL;
+    }
+
+    // Detect rotation
+    result->is_rotating = fabsf(result->roll_rate_dps) > STATIONARY_THRESHOLD_DPS ||
+                          fabsf(result->pitch_rate_dps) > STATIONARY_THRESHOLD_DPS ||
+                          fabsf(result->yaw_rate_dps) > STATIONARY_THRESHOLD_DPS;
+
+    // Detect horizontal acceleration (movement)
+    float horiz_accel = sqrtf(result->accel_forward_g * result->accel_forward_g +
+                              result->accel_left_g * result->accel_left_g);
+    result->is_accelerating = horiz_accel > ACCEL_THRESHOLD_G;
 }

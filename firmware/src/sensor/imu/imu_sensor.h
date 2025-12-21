@@ -66,7 +66,43 @@ _Static_assert(sizeof(struct imu_rotation) == 36, "imu_rotation size mismatch");
 // Sensor Types
 enum imu_type {
     IMU_TYPE_LSM6DSO,
-    // IMU_TYPE_MPU6050,  // Future
+    IMU_TYPE_MPU6050,
+};
+
+// Interpretation state enums
+enum imu_pitch_state {
+    IMU_PITCH_LEVEL,
+    IMU_PITCH_NOSE_UP,
+    IMU_PITCH_NOSE_DOWN,
+};
+
+enum imu_roll_state {
+    IMU_ROLL_LEVEL,
+    IMU_ROLL_LEFT,
+    IMU_ROLL_RIGHT,
+};
+
+// Interpretation result struct
+struct imu_interpretation {
+    // Acceleration in g units (bike frame)
+    float accel_forward_g;
+    float accel_left_g;
+    float accel_up_g;
+
+    // Tilt angles in degrees
+    float pitch_deg;
+    float roll_deg;
+
+    // Rotation rates in degrees per second
+    float yaw_rate_dps;
+    float pitch_rate_dps;
+    float roll_rate_dps;
+
+    // State flags
+    enum imu_pitch_state pitch_state;
+    enum imu_roll_state roll_state;
+    bool is_rotating;
+    bool is_accelerating;
 };
 
 // Main IMU Sensor Struct
@@ -87,6 +123,10 @@ struct imu_sensor {
     float accel_temp_coeff; // LSB/degC
     float temp_scale;       // LSB/degC (for the temperature sensor itself)
     float temp_offset;      // degC at raw value 0
+
+    // Scale factors (set by driver based on config)
+    float accel_lsb_per_g;  // LSB per 1g (e.g., 4096 for ±8g)
+    float gyro_lsb_per_dps; // LSB per 1 deg/s (e.g., 28.57 for 1000dps)
 
     // Function pointers (set based on type)
     void (*init)(struct imu_sensor *imu);
@@ -132,5 +172,9 @@ void imu_sensor_read_raw(struct imu_sensor *imu, int16_t *ax, int16_t *ay, int16
 
 // Get temperature in degrees Celsius
 float imu_sensor_get_temperature_celsius(struct imu_sensor *imu);
+
+// Sample IMU and interpret orientation/motion state
+// Fills the provided struct with readings and state flags
+void imu_sensor_interpret(struct imu_sensor *imu, struct imu_interpretation *result);
 
 #endif // IMU_SENSOR_H

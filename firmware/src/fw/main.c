@@ -195,7 +195,7 @@ static void calibrate_if_needed() {
 // Data acquisition
 
 static const uint16_t TELEMETRY_SAMPLE_RATE = 1000;
-static const uint16_t IMU_SAMPLE_RATE = 1000;
+static const uint16_t IMU_SAMPLE_RATE = 200;
 
 // We are using two buffers per sensor type. Data acquisition happens on core #1 into the active
 // buffer (referred to by the pointer active_telemetry_buffer) and we dump to Micro SD card
@@ -220,6 +220,9 @@ struct imu_record imu_databuffer2[BUFFER_SIZE];
 struct imu_record *active_imu_buffer = imu_databuffer1;
 uint16_t imu_count = 0;
 
+uint32_t total_telemetry_samples = 0;
+uint32_t total_imu_samples = 0;
+
 static void dump_active_telemetry_buffer(uint16_t size) {
     multicore_fifo_push_blocking(DUMP_TELEMETRY);
     multicore_fifo_push_blocking(size);
@@ -242,6 +245,7 @@ static bool telemetry_cb(repeating_timer_t *rt) {
     active_telemetry_buffer[telemetry_count].fork_angle = fork_sensor.measure(&fork_sensor);
     active_telemetry_buffer[telemetry_count].shock_angle = shock_sensor.measure(&shock_sensor);
     telemetry_count += 1;
+    total_telemetry_samples += 1;
 
     if (marker_pending) {
         dump_active_telemetry_buffer(telemetry_count);
@@ -270,6 +274,7 @@ static bool imu_cb(repeating_timer_t *rt) {
     active_imu_buffer[imu_count].gy = gy;
     active_imu_buffer[imu_count].gz = gz;
     imu_count += 1;
+    total_imu_samples += 1;
 
     return state == RECORD;
 }
@@ -701,6 +706,8 @@ static void on_rec_start() {
     active_telemetry_buffer = telemetry_databuffer1;
     imu_count = 0;
     active_imu_buffer = imu_databuffer1;
+    total_telemetry_samples = 0;
+    total_imu_samples = 0;
     multicore_fifo_drain();
 
     display_message(&disp, "INIT SENS");
@@ -744,7 +751,7 @@ static void on_rec_start() {
 }
 
 static void on_rec_stop() {
-    LOG("REC", "Stopping recording, telemetry samples: %u, imu samples: %u\n", telemetry_count, imu_count);
+    LOG("REC", "Stopping recording, telemetry samples: %lu, imu samples: %lu\n", total_telemetry_samples, total_imu_samples);
     state = IDLE;
     display_message(&disp, "IDLE");
     cancel_repeating_timer(&telemetry_timer);

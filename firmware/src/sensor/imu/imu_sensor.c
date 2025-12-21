@@ -242,9 +242,9 @@ void imu_sensor_interpret(struct imu_sensor *imu, struct imu_interpretation *res
     result->roll_deg = roll_rad * 180.0f / (float)M_PI;
 
     // Convert gyro to degrees per second
-    result->roll_rate_dps = gx_avg / imu->gyro_lsb_per_dps;   // rotation around X (forward)
-    result->pitch_rate_dps = gy_avg / imu->gyro_lsb_per_dps;  // rotation around Y (left)
-    result->yaw_rate_dps = gz_avg / imu->gyro_lsb_per_dps;    // rotation around Z (up)
+    result->roll_rate_dps = gx_avg / imu->gyro_lsb_per_dps;  // rotation around X (forward)
+    result->pitch_rate_dps = gy_avg / imu->gyro_lsb_per_dps; // rotation around Y (left)
+    result->yaw_rate_dps = gz_avg / imu->gyro_lsb_per_dps;   // rotation around Z (up)
 
     // Determine pitch state
     if (result->pitch_deg > LEVEL_THRESHOLD_DEG) {
@@ -270,7 +270,7 @@ void imu_sensor_interpret(struct imu_sensor *imu, struct imu_interpretation *res
                           fabsf(result->yaw_rate_dps) > STATIONARY_THRESHOLD_DPS;
 
     // Detect horizontal acceleration (movement)
-    float horiz_accel = sqrtf(result->accel_forward_g * result->accel_forward_g +
-                              result->accel_left_g * result->accel_left_g);
+    float horiz_accel =
+        sqrtf(result->accel_forward_g * result->accel_forward_g + result->accel_left_g * result->accel_left_g);
     result->is_accelerating = horiz_accel > ACCEL_THRESHOLD_G;
 }

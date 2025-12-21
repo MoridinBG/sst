@@ -1,15 +1,17 @@
 #include "mpu6050.h"
-#include "imu_sensor.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
+#include "imu_sensor.h"
 #include "pico/error.h"
 #include "pico/time.h"
 #include <stdio.h>
 
+#define MPU6050_ADDR 0x68
+
 #define REG_GYRO_CONFIG  0x1B
 #define REG_ACCEL_CONFIG 0x1C
 #define REG_ACCEL_XOUT_H 0x3B
-#define REG_TEMP_OUT_H  0x41
+#define REG_TEMP_OUT_H   0x41
 #define REG_GYRO_XOUT_H  0x43
 #define REG_PWR_MGMT_1   0x6B
 #define REG_WHO_AM_I     0x75
@@ -80,6 +82,7 @@ bool mpu6050_check_availability(struct imu_sensor *imu) {
     for (int i = 0; i < 5; i++) {
         id = read_register(imu, REG_WHO_AM_I);
         if (id == 0x68) {
+            printf("[MPU6050] Device found!\n");
             return true;
         }
         sleep_ms(10);
@@ -92,11 +95,11 @@ void mpu6050_read_raw(struct imu_sensor *imu, int16_t raw[6]) {
     read_registers(imu, REG_ACCEL_XOUT_H, buffer, 14);
 
     // MPU6050 outputs are Big-Endian
-    raw[0] = (int16_t)(buffer[0] << 8 | buffer[1]);  // ax
-    raw[1] = (int16_t)(buffer[2] << 8 | buffer[3]);  // ay
-    raw[2] = (int16_t)(buffer[4] << 8 | buffer[5]);  // az
+    raw[0] = (int16_t)(buffer[0] << 8 | buffer[1]); // ax
+    raw[1] = (int16_t)(buffer[2] << 8 | buffer[3]); // ay
+    raw[2] = (int16_t)(buffer[4] << 8 | buffer[5]); // az
     // buffer[6,7] is temperature
-    raw[3] = (int16_t)(buffer[8] << 8 | buffer[9]);  // gx
+    raw[3] = (int16_t)(buffer[8] << 8 | buffer[9]);   // gx
     raw[4] = (int16_t)(buffer[10] << 8 | buffer[11]); // gy
     raw[5] = (int16_t)(buffer[12] << 8 | buffer[13]); // gz
 }

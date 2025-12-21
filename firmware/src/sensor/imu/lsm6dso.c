@@ -1,22 +1,22 @@
 #include "lsm6dso.h"
-#include "imu_sensor.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "hardware/spi.h"
+#include "imu_sensor.h"
 #include "pico/error.h"
 #include "pico/time.h"
 #include <stdio.h>
 
-#define WHO_AM_I 0x0F
-#define CTRL1_XL 0x10
-#define CTRL2_G 0x11
-#define CTRL3_C 0x12
-#define CTRL4_C 0x13
+#define WHO_AM_I   0x0F
+#define CTRL1_XL   0x10
+#define CTRL2_G    0x11
+#define CTRL3_C    0x12
+#define CTRL4_C    0x13
 #define OUT_TEMP_L 0x20
-#define OUTX_L_G 0x22
+#define OUTX_L_G   0x22
 
 #define WRITE_MASK 0x7F
-#define READ_MASK 0x80
+#define READ_MASK  0x80
 
 static void write_register(struct imu_sensor *imu, uint8_t reg, uint8_t data) {
     if (imu->protocol == IMU_PROTOCOL_SPI) {
@@ -95,8 +95,8 @@ void lsm6dso_init(struct imu_sensor *imu) {
     }
 
     write_register(imu, CTRL3_C, 0x44);
-    write_register(imu, CTRL1_XL, 0x8C);  // 1.66kHz ODR, ±8g
-    write_register(imu, CTRL2_G, 0x88);   // 1.66kHz ODR, 1000dps
+    write_register(imu, CTRL1_XL, 0x8C); // 1.66kHz ODR, ±8g
+    write_register(imu, CTRL2_G, 0x88);  // 1.66kHz ODR, 1000dps
 
     // Set scale factors based on config
     // ±8g (FS_XL=11): 0.244 mg/LSB → 1g = 4096 LSB
@@ -110,6 +110,7 @@ bool lsm6dso_check_availability(struct imu_sensor *imu) {
     for (int i = 0; i < 5; i++) {
         id = read_register(imu, WHO_AM_I);
         if (id == 0x6C) {
+            printf("[LSM6DSO] Device not found!\n");
             return true;
         }
         sleep_ms(10);
@@ -121,11 +122,11 @@ void lsm6dso_read_raw(struct imu_sensor *imu, int16_t raw[6]) {
     uint8_t buffer[12];
     read_registers(imu, OUTX_L_G, buffer, 12);
 
-    raw[3] = (int16_t)(buffer[1] << 8 | buffer[0]);  // gx
-    raw[4] = (int16_t)(buffer[3] << 8 | buffer[2]);  // gy
-    raw[5] = (int16_t)(buffer[5] << 8 | buffer[4]);  // gz
-    raw[0] = (int16_t)(buffer[7] << 8 | buffer[6]);  // ax
-    raw[1] = (int16_t)(buffer[9] << 8 | buffer[8]);  // ay
+    raw[3] = (int16_t)(buffer[1] << 8 | buffer[0]);   // gx
+    raw[4] = (int16_t)(buffer[3] << 8 | buffer[2]);   // gy
+    raw[5] = (int16_t)(buffer[5] << 8 | buffer[4]);   // gz
+    raw[0] = (int16_t)(buffer[7] << 8 | buffer[6]);   // ax
+    raw[1] = (int16_t)(buffer[9] << 8 | buffer[8]);   // ay
     raw[2] = (int16_t)(buffer[11] << 8 | buffer[10]); // az
 }
 

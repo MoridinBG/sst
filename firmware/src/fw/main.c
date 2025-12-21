@@ -869,21 +869,21 @@ static void on_idle() {
             imu_sensor_interpret(&imu_sensor, &imu_data);
 
             printf("\033[2J\033[H");
-            printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n",
-                   (double)imu_data.accel_forward_g, (double)imu_data.accel_left_g, (double)imu_data.accel_up_g);
-            printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n",
-                   (double)imu_data.pitch_deg,
-                   imu_data.pitch_state == IMU_PITCH_NOSE_UP ? "NOSE UP" :
-                   (imu_data.pitch_state == IMU_PITCH_NOSE_DOWN ? "NOSE DOWN" : "level"),
+            printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n", (double)imu_data.accel_forward_g,
+                   (double)imu_data.accel_left_g, (double)imu_data.accel_up_g);
+            printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n", (double)imu_data.pitch_deg,
+                   imu_data.pitch_state == IMU_PITCH_NOSE_UP
+                       ? "NOSE UP"
+                       : (imu_data.pitch_state == IMU_PITCH_NOSE_DOWN ? "NOSE DOWN" : "level"),
                    (double)imu_data.roll_deg,
-                   imu_data.roll_state == IMU_ROLL_RIGHT ? "RIGHT" :
-                   (imu_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));
-            printf("[IMU] Gyro: yaw %+.1f°/s, pitch %+.1f°/s, roll %+.1f°/s\n",
-                   (double)imu_data.yaw_rate_dps, (double)imu_data.pitch_rate_dps, (double)imu_data.roll_rate_dps);
+                   imu_data.roll_state == IMU_ROLL_RIGHT ? "RIGHT"
+                                                         : (imu_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));
+            printf("[IMU] Gyro: yaw %+.1f°/s, pitch %+.1f°/s, roll %+.1f°/s\n", (double)imu_data.yaw_rate_dps,
+                   (double)imu_data.pitch_rate_dps, (double)imu_data.roll_rate_dps);
             printf("[IMU] Status: %s%s%s\n",
-                   (imu_data.pitch_state == IMU_PITCH_LEVEL && imu_data.roll_state == IMU_ROLL_LEVEL) ? "LEVEL" : "TILTED",
-                   imu_data.is_rotating ? ", ROTATING" : "",
-                   imu_data.is_accelerating ? ", ACCEL" : "");
+                   (imu_data.pitch_state == IMU_PITCH_LEVEL && imu_data.roll_state == IMU_ROLL_LEVEL) ? "LEVEL"
+                                                                                                      : "TILTED",
+                   imu_data.is_rotating ? ", ROTATING" : "", imu_data.is_accelerating ? ", ACCEL" : "");
         }
         ssd1306_show(&disp);
     }

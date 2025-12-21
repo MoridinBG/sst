@@ -30,7 +30,9 @@ add_executable(sufni-suspension-telemetry
     src/util/list.c
     src/sensor/travel/rotational.c
     src/sensor/travel/linear.c
+    src/sensor/imu/imu_sensor.c
     src/sensor/imu/lsm6dso.c
+    src/sensor/imu/mpu6050.c
 )
 
 if(NOT USB_UART_DEBUG)
@@ -70,6 +72,16 @@ if(${SHOCK_LINEAR})
     target_compile_options(sufni-suspension-telemetry PUBLIC
         -DSHOCK_LINEAR
     )
+endif()
+
+if(NOT IMU_MODEL)
+    set(IMU_MODEL "LSM6DSO")
+endif()
+
+if(IMU_MODEL STREQUAL "LSM6DSO")
+    target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_MODEL_LSM6DSO)
+elseif(IMU_MODEL STREQUAL "MPU6050")
+    target_compile_definitions(sufni-suspension-telemetry PUBLIC IMU_MODEL_MPU6050)
 endif()
 
 if(IMU_PROTO STREQUAL "I2C")

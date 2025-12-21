@@ -31,6 +31,7 @@
 #include "../rtc//ds3231.h"
 #include "../sensor/imu/imu_sensor.h"
 #include "../sensor/imu/lsm6dso.h"
+#include "../sensor/imu/mpu6050.h"
 #include "../sensor/travel/travel_sensor.h"
 #include "../util/config.h"
 #include "../util/list.h"
@@ -65,6 +66,20 @@ struct imu_sensor imu_sensor = {
     .protocol = IMU_PROTOCOL_I2C,
     .comm.i2c = {IMU_I2C_INST, IMU_ADDRESS, IMU_PIN_SDA, IMU_PIN_SCL},
 #endif
+#if defined(IMU_MODEL_MPU6050)
+    .type = IMU_TYPE_MPU6050,
+    .available = false,
+    .calibration = IMU_CALIBRATION_DEFAULT,
+    .gyro_temp_coeff = MPU6050_GYRO_TEMP_COEFF,
+    .accel_temp_coeff = MPU6050_ACCEL_TEMP_COEFF,
+    .temp_scale = MPU6050_TEMP_SCALE,
+    .temp_offset = MPU6050_TEMP_OFFSET,
+    .init = mpu6050_init,
+    .check_availability = mpu6050_check_availability,
+    .read_raw = mpu6050_read_raw,
+    .read_temperature = mpu6050_read_temperature,
+    .temperature_celsius = mpu6050_temperature_celsius};
+#else
     .type = IMU_TYPE_LSM6DSO,
     .available = false,
     .calibration = IMU_CALIBRATION_DEFAULT,
@@ -77,6 +92,7 @@ struct imu_sensor imu_sensor = {
     .read_raw = lsm6dso_read_raw,
     .read_temperature = lsm6dso_read_temperature,
     .temperature_celsius = lsm6dso_temperature_celsius};
+#endif
 
 // ----------------------------------------------------------------------------
 // Helper functions
@@ -843,7 +859,25 @@ static void on_idle() {
             ssd1306_draw_string(&disp, 40, 24, 1, "shock");
         }
         if (imu_sensor.available) {
-            imu_sensor_log_interpretation(&imu_sensor);
+            struct imu_interpretation imu_data;
+            imu_sensor_interpret(&imu_sensor, &imu_data);
+
+            printf("\033[2J\033[H");
+            printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n",
+                   (double)imu_data.accel_forward_g, (double)imu_data.accel_left_g, (double)imu_data.accel_up_g);
+            printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n",
+                   (double)imu_data.pitch_deg,
+                   imu_data.pitch_state == IMU_PITCH_NOSE_UP ? "NOSE UP" :
+                   (imu_data.pitch_state == IMU_PITCH_NOSE_DOWN ? "NOSE DOWN" : "level"),
+                   (double)imu_data.roll_deg,
+                   imu_data.roll_state == IMU_ROLL_RIGHT ? "RIGHT" :
+                   (imu_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));
+            printf("[IMU] Gyro: yaw %+.1f°/s, pitch %+.1f°/s, roll %+.1f°/s\n",
+                   (double)imu_data.yaw_rate_dps, (double)imu_data.pitch_rate_dps, (double)imu_data.roll_rate_dps);
+            printf("[IMU] Status: %s%s%s\n",
+                   (imu_data.pitch_state == IMU_PITCH_LEVEL && imu_data.roll_state == IMU_ROLL_LEVEL) ? "LEVEL" : "TILTED",
+                   imu_data.is_rotating ? ", ROTATING" : "",
+                   imu_data.is_accelerating ? ", ACCEL" : "");
         }
         ssd1306_show(&disp);
     }

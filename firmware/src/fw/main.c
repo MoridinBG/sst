@@ -76,8 +76,7 @@ struct imu_sensor imu_sensor = {
     .check_availability = lsm6dso_check_availability,
     .read_raw = lsm6dso_read_raw,
     .read_temperature = lsm6dso_read_temperature,
-    .temperature_celsius = lsm6dso_temperature_celsius
-};
+    .temperature_celsius = lsm6dso_temperature_celsius};
 
 // ----------------------------------------------------------------------------
 // Helper functions
@@ -241,7 +240,7 @@ static bool imu_cb(repeating_timer_t *rt) {
         imu_count = 0;
     }
     int16_t ax, ay, az, gx, gy, gz;
-    lsm6dso_read(&ax, &ay, &az, &gx, &gy, &gz);
+    imu_sensor_read(&imu_sensor, &ax, &ay, &az, &gx, &gy, &gz);
     active_imu_buffer[imu_count].ax = ax;
     active_imu_buffer[imu_count].ay = ay;
     active_imu_buffer[imu_count].az = az;

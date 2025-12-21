@@ -169,7 +169,7 @@ static void build_rotation_matrix(float g_sensor[3], float f_sensor[3], struct i
 }
 
 void imu_sensor_calibrate_tilted(struct imu_sensor *imu) {
-    // Sample gravity while bike is tilted nose-up
+    // Sample gravity while bike is tilted front-up
     int32_t accel_sum[3] = {0};
 
     for (int i = 0; i < 50; i++) {
@@ -190,7 +190,7 @@ void imu_sensor_calibrate_tilted(struct imu_sensor *imu) {
     g_tilted[1] = accel_sum[1] / 50.0f;
     g_tilted[2] = accel_sum[2] / 50.0f;
 
-    // When nose is up, accelerometer reaction tilts forward
+    // When front is up, accelerometer reaction tilts forward
     // Difference (tilted - level) points forward
     float f_sensor[3];
     f_sensor[0] = g_tilted[0] - g_sensor[0];
@@ -234,7 +234,7 @@ void imu_sensor_interpret(struct imu_sensor *imu, struct imu_interpretation *res
     result->accel_up_g = az_avg / imu->accel_lsb_per_g;
 
     // Calculate pitch and roll from accelerometer
-    // pitch = atan2(ax, az) - positive = nose up
+    // pitch = atan2(ax, az) - positive = front up
     // roll = atan2(ay, az) - positive = tilted right
     float pitch_rad = atan2f(ax_avg, az_avg);
     float roll_rad = atan2f(ay_avg, az_avg);
@@ -248,9 +248,9 @@ void imu_sensor_interpret(struct imu_sensor *imu, struct imu_interpretation *res
 
     // Determine pitch state
     if (result->pitch_deg > LEVEL_THRESHOLD_DEG) {
-        result->pitch_state = IMU_PITCH_NOSE_UP;
+        result->pitch_state = IMU_PITCH_FRONT_UP;
     } else if (result->pitch_deg < -LEVEL_THRESHOLD_DEG) {
-        result->pitch_state = IMU_PITCH_NOSE_DOWN;
+        result->pitch_state = IMU_PITCH_FRONT_DOWN;
     } else {
         result->pitch_state = IMU_PITCH_LEVEL;
     }

@@ -72,8 +72,8 @@ enum imu_type {
 // Interpretation state enums
 enum imu_pitch_state {
     IMU_PITCH_LEVEL,
-    IMU_PITCH_NOSE_UP,
-    IMU_PITCH_NOSE_DOWN,
+    IMU_PITCH_FRONT_UP,
+    IMU_PITCH_FRONT_DOWN,
 };
 
 enum imu_roll_state {
@@ -154,7 +154,7 @@ bool imu_sensor_available(struct imu_sensor *imu);
 // - Records gravity vector for orientation calibration
 void imu_sensor_calibrate_stationary(struct imu_sensor *imu);
 
-// Phase 2 calibration: Call while bike is tilted nose-up
+// Phase 2 calibration: Call while bike is tilted front-up
 // - Samples gravity while tilted
 // - Computes forward direction from gravity shift
 // - Builds rotation matrix

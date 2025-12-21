@@ -641,7 +641,7 @@ static void on_cal_imu_idle() {
             ssd1306_draw_string(&disp, 0, 24, 1, "Hold level");
         } else {
             ssd1306_draw_string(&disp, 0, 0, 2, "IMU TILT");
-            ssd1306_draw_string(&disp, 0, 24, 1, "Nose up");
+            ssd1306_draw_string(&disp, 0, 24, 1, "Front up");
         }
         ssd1306_show(&disp);
     }
@@ -872,9 +872,9 @@ static void on_idle() {
             printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n", (double)imu_data.accel_forward_g,
                    (double)imu_data.accel_left_g, (double)imu_data.accel_up_g);
             printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n", (double)imu_data.pitch_deg,
-                   imu_data.pitch_state == IMU_PITCH_NOSE_UP
-                       ? "NOSE UP"
-                       : (imu_data.pitch_state == IMU_PITCH_NOSE_DOWN ? "NOSE DOWN" : "level"),
+                   imu_data.pitch_state == IMU_PITCH_FRONT_UP
+                       ? "FRONT UP"
+                       : (imu_data.pitch_state == IMU_PITCH_FRONT_DOWN ? "FRONT DOWN" : "level"),
                    (double)imu_data.roll_deg,
                    imu_data.roll_state == IMU_ROLL_RIGHT ? "RIGHT"
                                                          : (imu_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));

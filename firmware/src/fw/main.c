@@ -559,6 +559,93 @@ static void on_cal_trvl_comp() {
     f_close(&calibration_fil);
 
     LOG("CAL", "Calibration saved successfully\n");
+static void on_cal_imu_idle() {
+    static absolute_time_t timeout = {0};
+    if (absolute_time_diff_us(get_absolute_time(), timeout) < 0) {
+        timeout = make_timeout_time_ms(1000);
+
+        ssd1306_clear(&disp);
+        if (state == CAL_IMU_IDLE_1) {
+            ssd1306_draw_string(&disp, 0, 0, 2, "IMU STAT");
+            ssd1306_draw_string(&disp, 0, 24, 1, "Hold still");
+        } else {
+            ssd1306_draw_string(&disp, 0, 0, 2, "IMU FWD");
+            ssd1306_draw_string(&disp, 0, 24, 1, "Push fwd");
+        }
+        ssd1306_show(&disp);
+    }
+}
+
+static void on_cal_imu_stationary() {
+    display_message(&disp, "CALIB...");
+    LOG("CAL", "Starting IMU stationary calibration\n");
+
+    imu_sensor_calibrate_stationary(&imu_sensor);
+
+    LOG("CAL", "IMU stationary calibration complete\n");
+    state = CAL_IMU_IDLE_2;
+}
+
+static bool is_forward_cal_running = false;
+
+static void on_cal_imu_forward() {
+    if (!is_forward_cal_running) {
+        display_message(&disp, "REC FWD...");
+        if (!imu_sensor_calibrate_forward_start(&imu_sensor)) {
+            display_message(&disp, "MEM ERR");
+            sleep_ms(1000);
+            state = IDLE;
+            return;
+        }
+        is_forward_cal_running = true;
+    }
+
+    static absolute_time_t next_sample = {0};
+    if (absolute_time_diff_us(get_absolute_time(), next_sample) < 0) {
+        // 100Hz sampling
+        next_sample = make_timeout_time_us(10000);
+
+        if (!imu_sensor_calibrate_forward_sample(&imu_sensor)) {
+            // This case may not be reachable if buffer is circular, but as a safeguard:
+            LOG("CAL", "IMU forward cal buffer full or error\n");
+        }
+    }
+}
+
+static void on_cal_imu_done() {
+    is_forward_cal_running = false; // Reset flag for next time
+    display_message(&disp, "SAVING...");
+    LOG("CAL", "Finishing IMU forward calibration\n");
+
+    imu_sensor_calibrate_forward_finish(&imu_sensor);
+
+    FIL calibration_fil;
+    FRESULT fr = f_open(&calibration_fil, "CALIBRATION", FA_OPEN_EXISTING | FA_WRITE);
+    if (fr == FR_OK) {
+        f_lseek(&calibration_fil, 7);
+        uint bw;
+        uint8_t magic = 'I';
+        f_write(&calibration_fil, &magic, 1, &bw);
+        f_write(&calibration_fil, &imu_sensor.calibration.gyro_bias, 6, &bw);
+        f_write(&calibration_fil, &imu_sensor.calibration.accel_bias, 6, &bw);
+        f_write(&calibration_fil, &imu_sensor.calibration.rotation, 36, &bw);
+        f_write(&calibration_fil, &imu_sensor.calibration.cal_temperature, 2, &bw);
+        f_close(&calibration_fil);
+        LOG("CAL", "IMU rotation matrix:\n");
+        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[0][0],
+            (double)imu_sensor.calibration.rotation.matrix[0][1], (double)imu_sensor.calibration.rotation.matrix[0][2]);
+        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[1][0],
+            (double)imu_sensor.calibration.rotation.matrix[1][1], (double)imu_sensor.calibration.rotation.matrix[1][2]);
+        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[2][0],
+            (double)imu_sensor.calibration.rotation.matrix[2][1], (double)imu_sensor.calibration.rotation.matrix[2][2]);
+        display_message(&disp, "CAL OK");
+        sleep_ms(1000);
+    } else {
+        LOG("CAL", "Failed to open CALIBRATION file for appending\n");
+        display_message(&disp, "SAVE ERR");
+        sleep_ms(1000);
+    }
+
     state = IDLE;
 }
 

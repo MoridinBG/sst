@@ -4,13 +4,8 @@
 #include <string.h>
 #include <pico/stdlib.h>
 
-// Static buffer for forward motion calibration - only used during calibration
-// 300 samples at 100Hz = 3 seconds of recording
-#define IMU_CAL_BUFFER_SIZE 300
-static int16_t (*cal_buffer)[6] = NULL;
-static uint16_t cal_buffer_count = 0;
-static uint16_t cal_buffer_head = 0;
-static float g_sensor[3]; // Gravity vector from stationary calibration
+// Gravity vector from stationary calibration (used by tilt calibration)
+static float g_sensor[3];
 
 bool imu_sensor_init(struct imu_sensor *imu) {
     if (imu->init) {
@@ -62,8 +57,8 @@ void imu_sensor_read(struct imu_sensor *imu, int16_t *ax, int16_t *ay, int16_t *
     // Apply temperature-compensated bias
     float a[3], g[3];
     for (int i = 0; i < 3; i++) {
-        a[i] = raw[i]   - imu->calibration.accel_bias[i] - imu->accel_temp_coeff * temp_diff;
-        g[i] = raw[3+i] - imu->calibration.gyro_bias[i]  - imu->gyro_temp_coeff * temp_diff;
+        a[i] = raw[i] - imu->calibration.accel_bias[i] - imu->accel_temp_coeff * temp_diff;
+        g[i] = raw[3 + i] - imu->calibration.gyro_bias[i] - imu->gyro_temp_coeff * temp_diff;
     }
 
     // Apply rotation matrix: bike = R x sensor
@@ -124,39 +119,6 @@ void imu_sensor_calibrate_stationary(struct imu_sensor *imu) {
     g_sensor[2] = accel_sum[2] / 100.0f;
 }
 
-bool imu_sensor_calibrate_forward_start(struct imu_sensor *imu) {
-    if (cal_buffer) {
-        free(cal_buffer);
-    }
-    cal_buffer = malloc(IMU_CAL_BUFFER_SIZE * sizeof(*cal_buffer));
-    cal_buffer_count = 0;
-    cal_buffer_head = 0;
-    return cal_buffer != NULL;
-}
-
-bool imu_sensor_calibrate_forward_sample(struct imu_sensor *imu) {
-    if (!cal_buffer) {
-        return false;
-    }
-
-    // Write to current head position
-    if (imu->read_raw) {
-        imu->read_raw(imu, cal_buffer[cal_buffer_head]);
-    } else {
-        memset(cal_buffer[cal_buffer_head], 0, sizeof(cal_buffer[0]));
-    }
-    
-    // Advance head (circular buffer)
-    cal_buffer_head = (cal_buffer_head + 1) % IMU_CAL_BUFFER_SIZE;
-    
-    // Track count up to full size
-    if (cal_buffer_count < IMU_CAL_BUFFER_SIZE) {
-        cal_buffer_count++;
-    }
-    
-    return true;
-}
-
 static void normalize(float *v, float *out) {
     float mag = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
     if (mag > 0.0001f) {
@@ -176,32 +138,6 @@ static void cross_product(float *a, float *b, float *out) {
     out[0] = a[1] * b[2] - a[2] * b[1];
     out[1] = a[2] * b[0] - a[0] * b[2];
     out[2] = a[0] * b[1] - a[1] * b[0];
-}
-
-static void find_forward_direction(int16_t (*buffer)[6], uint16_t count, float g_sensor[3], float f_sensor[3]) {
-    // Accumulate all acceleration vectors (gravity-subtracted)
-    float accel_sum[3] = {0};
-
-    for (uint16_t s = 0; s < count; s++) {
-        // Get acceleration, subtract gravity
-        accel_sum[0] += buffer[s][0] - g_sensor[0];
-        accel_sum[1] += buffer[s][1] - g_sensor[1];
-        accel_sum[2] += buffer[s][2] - g_sensor[2];
-    }
-
-    // Calculate magnitude of average acceleration
-    float mag = sqrtf(accel_sum[0] * accel_sum[0] + accel_sum[1] * accel_sum[1] + accel_sum[2] * accel_sum[2]);
-
-    // Output forward direction (normalized)
-    if (mag > 0.0001f) {
-        f_sensor[0] = accel_sum[0] / mag;
-        f_sensor[1] = accel_sum[1] / mag;
-        f_sensor[2] = accel_sum[2] / mag;
-    } else {
-        f_sensor[0] = 0;
-        f_sensor[1] = 0;
-        f_sensor[2] = 0;
-    }
 }
 
 static void build_rotation_matrix(float g_sensor[3], float f_sensor[3], struct imu_rotation *rot) {
@@ -232,15 +168,34 @@ static void build_rotation_matrix(float g_sensor[3], float f_sensor[3], struct i
     }
 }
 
-void imu_sensor_calibrate_forward_finish(struct imu_sensor *imu) {
-    if (!cal_buffer) {
-        return;
+void imu_sensor_calibrate_tilted(struct imu_sensor *imu) {
+    // Sample gravity while bike is tilted nose-up
+    int32_t accel_sum[3] = {0};
+
+    for (int i = 0; i < 50; i++) {
+        int16_t raw[6];
+        if (imu->read_raw) {
+            imu->read_raw(imu, raw);
+        } else {
+            memset(raw, 0, sizeof(raw));
+        }
+        accel_sum[0] += raw[0];
+        accel_sum[1] += raw[1];
+        accel_sum[2] += raw[2];
+        sleep_ms(10);
     }
 
-    float f_sensor[3];
-    find_forward_direction(cal_buffer, cal_buffer_count, g_sensor, f_sensor);
-    build_rotation_matrix(g_sensor, f_sensor, &imu->calibration.rotation);
+    float g_tilted[3];
+    g_tilted[0] = accel_sum[0] / 50.0f;
+    g_tilted[1] = accel_sum[1] / 50.0f;
+    g_tilted[2] = accel_sum[2] / 50.0f;
 
-    free(cal_buffer);
-    cal_buffer = NULL;
+    // When nose is up, accelerometer reaction tilts forward
+    // Difference (tilted - level) points forward
+    float f_sensor[3];
+    f_sensor[0] = g_tilted[0] - g_sensor[0];
+    f_sensor[1] = g_tilted[1] - g_sensor[1];
+    f_sensor[2] = g_tilted[2] - g_sensor[2];
+
+    build_rotation_matrix(g_sensor, f_sensor, &imu->calibration.rotation);
 }

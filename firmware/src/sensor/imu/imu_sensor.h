@@ -83,17 +83,17 @@ struct imu_sensor {
     struct imu_calibration calibration;
 
     // Temperature compensation parameters
-        float gyro_temp_coeff;   // LSB/degC
-        float accel_temp_coeff;  // LSB/degC
-        float temp_scale;        // LSB/degC (for the temperature sensor itself)
-        float temp_offset;       // degC at raw value 0
-    
-        // Function pointers (set based on type)
+    float gyro_temp_coeff;  // LSB/degC
+    float accel_temp_coeff; // LSB/degC
+    float temp_scale;       // LSB/degC (for the temperature sensor itself)
+    float temp_offset;      // degC at raw value 0
+
+    // Function pointers (set based on type)
     void (*init)(struct imu_sensor *imu);
     bool (*check_availability)(struct imu_sensor *imu);
     void (*read_raw)(struct imu_sensor *imu, int16_t raw[6]); // ax,ay,az,gx,gy,gz
     int16_t (*read_temperature)(struct imu_sensor *imu);      // Raw sensor units
-    float (*temperature_celsius)(struct imu_sensor *imu);    // Degrees Celsius
+    float (*temperature_celsius)(struct imu_sensor *imu);     // Degrees Celsius
 
     // Calibration functions
     void (*calibrate_phase1)(struct imu_sensor *imu);
@@ -110,28 +110,15 @@ bool imu_sensor_init(struct imu_sensor *imu);
 bool imu_sensor_available(struct imu_sensor *imu);
 
 // Phase 1 calibration: Call while bike is stationary and level
-// - Determines gyro bias (averages ~100 samples)
+// - Determines gyro bias (averages samples)
 // - Records gravity vector for orientation calibration
-// - Call imu_sensor_calibrate_forward() after this
 void imu_sensor_calibrate_stationary(struct imu_sensor *imu);
 
-// Phase 2 calibration: Start recording forward motion
-// Call when entering CAL_IMU_FORWARD state
-// Returns: true if buffer allocated, false otherwise
-bool imu_sensor_calibrate_forward_start(struct imu_sensor *imu);
-
-// Phase 2 calibration: Record one sample during forward push
-// Call at ~100Hz while in CAL_IMU_FORWARD state
-// Overwrites oldest values when buffer is full (circular buffer)
-// Returns: true if recorded, false if buffer not allocated
-bool imu_sensor_calibrate_forward_sample(struct imu_sensor *imu);
-
-// Phase 2 calibration: Finish and compute rotation matrix
-// Call when user presses button to end forward recording
-// - Analyzes recorded motion to determine forward direction
-// - Builds rotation matrix from gravity + forward vectors
-// - Completes calibration
-void imu_sensor_calibrate_forward_finish(struct imu_sensor *imu);
+// Phase 2 calibration: Call while bike is tilted nose-up
+// - Samples gravity while tilted
+// - Computes forward direction from gravity shift
+// - Builds rotation matrix
+void imu_sensor_calibrate_tilted(struct imu_sensor *imu);
 
 // Read calibrated values (bias subtracted, rotated to bike frame)
 // Output: ax, ay, az in raw units, bike frame (X=forward, Y=left, Z=up)

@@ -615,11 +615,11 @@ static void on_cal_imu_idle() {
 
         ssd1306_clear(&disp);
         if (state == CAL_IMU_IDLE_1) {
-            ssd1306_draw_string(&disp, 0, 0, 2, "IMU STAT");
-            ssd1306_draw_string(&disp, 0, 24, 1, "Hold still");
+            ssd1306_draw_string(&disp, 0, 0, 2, "IMU LEVEL");
+            ssd1306_draw_string(&disp, 0, 24, 1, "Hold level");
         } else {
-            ssd1306_draw_string(&disp, 0, 0, 2, "IMU FWD");
-            ssd1306_draw_string(&disp, 0, 24, 1, "Push fwd");
+            ssd1306_draw_string(&disp, 0, 0, 2, "IMU TILT");
+            ssd1306_draw_string(&disp, 0, 24, 1, "Nose up");
         }
         ssd1306_show(&disp);
     }
@@ -635,38 +635,13 @@ static void on_cal_imu_stationary() {
     state = CAL_IMU_IDLE_2;
 }
 
-static bool is_forward_cal_running = false;
+static void on_cal_imu_tilt() {
+    display_message(&disp, "CALIB...");
+    LOG("CAL", "Starting IMU tilt calibration\n");
 
-static void on_cal_imu_forward() {
-    if (!is_forward_cal_running) {
-        display_message(&disp, "REC FWD...");
-        if (!imu_sensor_calibrate_forward_start(&imu_sensor)) {
-            display_message(&disp, "MEM ERR");
-            sleep_ms(1000);
-            state = IDLE;
-            return;
-        }
-        is_forward_cal_running = true;
-    }
+    imu_sensor_calibrate_tilted(&imu_sensor);
 
-    static absolute_time_t next_sample = {0};
-    if (absolute_time_diff_us(get_absolute_time(), next_sample) < 0) {
-        // 100Hz sampling
-        next_sample = make_timeout_time_us(10000);
-
-        if (!imu_sensor_calibrate_forward_sample(&imu_sensor)) {
-            // This case may not be reachable if buffer is circular, but as a safeguard:
-            LOG("CAL", "IMU forward cal buffer full or error\n");
-        }
-    }
-}
-
-static void on_cal_imu_done() {
-    is_forward_cal_running = false; // Reset flag for next time
-    display_message(&disp, "SAVING...");
-    LOG("CAL", "Finishing IMU forward calibration\n");
-
-    imu_sensor_calibrate_forward_finish(&imu_sensor);
+    LOG("CAL", "IMU tilt calibration complete\n");
 
     FIL calibration_fil;
     FRESULT fr = f_open(&calibration_fil, "CALIBRATION", FA_OPEN_EXISTING | FA_WRITE);
@@ -690,7 +665,7 @@ static void on_cal_imu_done() {
         display_message(&disp, "CAL OK");
         sleep_ms(1000);
     } else {
-        LOG("CAL", "Failed to open CALIBRATION file for appending\n");
+        LOG("CAL", "Failed to open CALIBRATION file\n");
         display_message(&disp, "SAVE ERR");
         sleep_ms(1000);
     }
@@ -840,7 +815,7 @@ static void on_idle() {
 
     static absolute_time_t timeout = {0};
     if (absolute_time_diff_us(get_absolute_time(), timeout) < 0) {
-        timeout = make_timeout_time_ms(1000);
+        timeout = make_timeout_time_ms(600);
 
         uint8_t voltage_percentage = ((read_voltage() - BATTERY_MIN_V) / BATTERY_RANGE) * 100;
         static char battery_str[] = " PWR";
@@ -866,6 +841,9 @@ static void on_idle() {
         }
         if (shock_sensor.check_availability(&shock_sensor)) {
             ssd1306_draw_string(&disp, 40, 24, 1, "shock");
+        }
+        if (imu_sensor.available) {
+            imu_sensor_log_interpretation(&imu_sensor);
         }
         ssd1306_show(&disp);
     }
@@ -950,8 +928,7 @@ static void (*state_handlers[STATES_COUNT])() = {
     on_cal_imu_idle,       /* CAL_IMU_IDLE_1 */
     on_cal_imu_stationary, /* CAL_IMU_STATIONARY */
     on_cal_imu_idle,       /* CAL_IMU_IDLE_2 */
-    on_cal_imu_forward,    /* CAL_IMU_FORWARD */
-    on_cal_imu_done,       /* CAL_IMU_DONE */
+    on_cal_imu_tilt,       /* CAL_IMU_TILT */
 };
 
 // ----------------------------------------------------------------------------
@@ -969,10 +946,7 @@ static void on_left_press(void *user_data) {
             state = CAL_IMU_STATIONARY;
             break;
         case CAL_IMU_IDLE_2:
-            state = CAL_IMU_FORWARD;
-            break;
-        case CAL_IMU_FORWARD:
-            state = CAL_IMU_DONE;
+            state = CAL_IMU_TILT;
             break;
         case IDLE:
             state = REC_START;

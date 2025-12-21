@@ -95,8 +95,14 @@ void lsm6dso_init(struct imu_sensor *imu) {
     }
 
     write_register(imu, CTRL3_C, 0x44);
-    write_register(imu, CTRL1_XL, 0x8C);
-    write_register(imu, CTRL2_G, 0x88);
+    write_register(imu, CTRL1_XL, 0x8C);  // 1.66kHz ODR, ±8g
+    write_register(imu, CTRL2_G, 0x88);   // 1.66kHz ODR, 1000dps
+
+    // Set scale factors based on config
+    // ±8g (FS_XL=11): 0.244 mg/LSB → 1g = 4096 LSB
+    // 1000dps (FS_G=10): 35 mdps/LSB → 1 dps = 28.57 LSB
+    imu->accel_lsb_per_g = 4096.0f;
+    imu->gyro_lsb_per_dps = 28.57f;
 }
 
 bool lsm6dso_check_availability(struct imu_sensor *imu) {

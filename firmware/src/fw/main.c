@@ -739,9 +739,11 @@ static void on_rec_start() {
         display_message(&disp, "TEL TMR ERR");
         while (true) { tight_loop_contents(); }
     }
-    if (!add_repeating_timer_us(-1000000 / IMU_SAMPLE_RATE, imu_cb, NULL, &imu_timer)) {
-        display_message(&disp, "IMU TMR ERR");
-        while (true) { tight_loop_contents(); }
+    if (imu_sensor.available) {
+        if (!add_repeating_timer_us(-1000000 / IMU_SAMPLE_RATE, imu_cb, NULL, &imu_timer)) {
+            display_message(&disp, "IMU TMR ERR");
+            while (true) { tight_loop_contents(); }
+        }
     }
 }
 
@@ -750,7 +752,9 @@ static void on_rec_stop() {
     state = IDLE;
     display_message(&disp, "IDLE");
     cancel_repeating_timer(&telemetry_timer);
-    cancel_repeating_timer(&imu_timer);
+    if (imu_sensor.available) {
+        cancel_repeating_timer(&imu_timer);
+    }
 
     multicore_fifo_push_blocking(FINISH);
     // Flush telemetry
@@ -1045,10 +1049,8 @@ int main() {
     i2c_program_init(I2C_PIO, I2C_SM, offset, PIO_PIN_SDA, PIO_PIN_SDA + 1);
 
     // IMU init
-    if (lsm6dso_init() != PICO_OK) {
-        setup_display(&disp);
-        display_message(&disp, "IMU ERR");
-        while (true) { tight_loop_contents(); }
+    if (!imu_sensor_init(&imu_sensor)) {
+        LOG("INIT", "IMU not found or failed to initialize\n");
     }
 
     // DS3231 init

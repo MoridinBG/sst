@@ -32,6 +32,7 @@ enum state {
 #define CHUNK_TYPE_TELEMETRY 0x01
 #define CHUNK_TYPE_MARKER 0x02
 #define CHUNK_TYPE_IMU 0x03
+#define CHUNK_TYPE_IMU_META 0x04
 
 struct chunk_header {
     uint8_t type;
@@ -41,6 +42,12 @@ struct chunk_header {
 struct rate_entry {
     uint8_t type;
     uint16_t rate;
+} __attribute__((packed));
+
+struct imu_meta_entry {
+    uint8_t location_id; // 0=Frame, 1=Fork, 2=Rear
+    float accel_lsb_per_g;
+    float gyro_lsb_per_dps;
 } __attribute__((packed));
 
 struct header {

@@ -342,19 +342,54 @@ static bool telemetry_cb(repeating_timer_t *rt) {
 }
 
 static bool imu_cb(repeating_timer_t *rt) {
-    if (imu_count == BUFFER_SIZE) {
-        dump_active_imu_buffer(BUFFER_SIZE);
+    uint8_t active_count = 0;
+    if (imu_frame.available)
+        active_count++;
+    if (imu_fork.available)
+        active_count++;
+    if (imu_rear.available)
+        active_count++;
+
+    if (imu_count + active_count > BUFFER_SIZE) {
+        dump_active_imu_buffer(imu_count);
         imu_count = 0;
     }
+
+    // The order of filling the buffer must match the order of imu meta chunks written to file
+    // frame, fork, rear
+    // The records do not identify what sensor they come from
     int16_t ax, ay, az, gx, gy, gz;
-    imu_sensor_read(&imu_sensor, &ax, &ay, &az, &gx, &gy, &gz);
-    active_imu_buffer[imu_count].ax = ax;
-    active_imu_buffer[imu_count].ay = ay;
-    active_imu_buffer[imu_count].az = az;
-    active_imu_buffer[imu_count].gx = gx;
-    active_imu_buffer[imu_count].gy = gy;
-    active_imu_buffer[imu_count].gz = gz;
-    imu_count += 1;
+    if (imu_frame.available) {
+        imu_sensor_read(&imu_frame, &ax, &ay, &az, &gx, &gy, &gz);
+        active_imu_buffer[imu_count].ax = ax;
+        active_imu_buffer[imu_count].ay = ay;
+        active_imu_buffer[imu_count].az = az;
+        active_imu_buffer[imu_count].gx = gx;
+        active_imu_buffer[imu_count].gy = gy;
+        active_imu_buffer[imu_count].gz = gz;
+        imu_count++;
+    }
+    if (imu_fork.available) {
+        imu_sensor_read(&imu_fork, &ax, &ay, &az, &gx, &gy, &gz);
+        active_imu_buffer[imu_count].ax = ax;
+        active_imu_buffer[imu_count].ay = ay;
+        active_imu_buffer[imu_count].az = az;
+        active_imu_buffer[imu_count].gx = gx;
+        active_imu_buffer[imu_count].gy = gy;
+        active_imu_buffer[imu_count].gz = gz;
+        imu_count++;
+    }
+    if (imu_rear.available) {
+        imu_sensor_read(&imu_rear, &ax, &ay, &az, &gx, &gy, &gz);
+        active_imu_buffer[imu_count].ax = ax;
+        active_imu_buffer[imu_count].ay = ay;
+        active_imu_buffer[imu_count].az = az;
+        active_imu_buffer[imu_count].gx = gx;
+        active_imu_buffer[imu_count].gy = gy;
+        active_imu_buffer[imu_count].gz = gz;
+        imu_count++;
+    }
+
     total_imu_samples += 1;
 
     return state == RECORD;
@@ -519,6 +554,37 @@ static int open_datafile() {
     re.type = CHUNK_TYPE_IMU;
     re.rate = IMU_SAMPLE_RATE;
     f_write(&recording, &re, sizeof(struct rate_entry), NULL);
+
+    // Count active IMUs and prepare metadata
+    uint8_t imu_count = 0;
+    if (imu_frame.available)
+        imu_count++;
+    if (imu_fork.available)
+        imu_count++;
+    if (imu_rear.available)
+        imu_count++;
+
+    // IMU meta chunks determine the order of records in IMU record chunks written in the imu_cb
+    // frame, fork, rear
+    if (imu_count > 0) {
+        ch.type = CHUNK_TYPE_IMU_META;
+        ch.length = 1 + imu_count * sizeof(struct imu_meta_entry);
+        f_write(&recording, &ch, sizeof(struct chunk_header), NULL);
+        f_write(&recording, &imu_count, 1, NULL);
+
+        if (imu_frame.available) {
+            struct imu_meta_entry entry = {0, imu_frame.accel_lsb_per_g, imu_frame.gyro_lsb_per_dps};
+            f_write(&recording, &entry, sizeof(struct imu_meta_entry), NULL);
+        }
+        if (imu_fork.available) {
+            struct imu_meta_entry entry = {1, imu_fork.accel_lsb_per_g, imu_fork.gyro_lsb_per_dps};
+            f_write(&recording, &entry, sizeof(struct imu_meta_entry), NULL);
+        }
+        if (imu_rear.available) {
+            struct imu_meta_entry entry = {2, imu_rear.accel_lsb_per_g, imu_rear.gyro_lsb_per_dps};
+            f_write(&recording, &entry, sizeof(struct imu_meta_entry), NULL);
+        }
+    }
 
     return index;
 }
@@ -868,7 +934,9 @@ static void on_rec_start() {
         display_message(&disp, "TEL TMR ERR");
         while (true) { tight_loop_contents(); }
     }
-    if (imu_sensor.available) {
+
+    bool imu_active = imu_frame.available || imu_fork.available || imu_rear.available;
+    if (imu_active) {
         if (!add_repeating_timer_us(-1000000 / IMU_SAMPLE_RATE, imu_cb, NULL, &imu_timer)) {
             display_message(&disp, "IMU TMR ERR");
             while (true) { tight_loop_contents(); }
@@ -877,11 +945,14 @@ static void on_rec_start() {
 }
 
 static void on_rec_stop() {
-    LOG("REC", "Stopping recording, telemetry samples: %lu, imu samples: %lu\n", total_telemetry_samples, total_imu_samples);
+    LOG("REC", "Stopping recording, telemetry samples: %lu, imu samples: %lu\n", total_telemetry_samples,
+        total_imu_samples);
     state = IDLE;
     display_message(&disp, "IDLE");
     cancel_repeating_timer(&telemetry_timer);
-    if (imu_sensor.available) {
+
+    bool imu_active = imu_frame.available || imu_fork.available || imu_rear.available;
+    if (imu_active) {
         cancel_repeating_timer(&imu_timer);
     }
 
@@ -1195,9 +1266,21 @@ int main() {
     i2c_program_init(I2C_PIO, I2C_SM, offset, PIO_PIN_SDA, PIO_PIN_SDA + 1);
 
     // IMU init
-    if (!imu_sensor_init(&imu_sensor)) {
-        LOG("INIT", "IMU not found or failed to initialize\n");
+#if IMU_FRAME != IMU_NONE
+    if (!imu_sensor_init(&imu_frame)) {
+        LOG("INIT", "Frame IMU not found or failed to initialize\n");
     }
+#endif
+#if IMU_FORK != IMU_NONE
+    if (!imu_sensor_init(&imu_fork)) {
+        LOG("INIT", "Fork IMU not found or failed to initialize\n");
+    }
+#endif
+#if IMU_REAR != IMU_NONE
+    if (!imu_sensor_init(&imu_rear)) {
+        LOG("INIT", "Rear IMU not found or failed to initialize\n");
+    }
+#endif
 
     // DS3231 init
     struct tm tm_now;

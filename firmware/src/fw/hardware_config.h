@@ -92,14 +92,14 @@
 #define IMU_PIN_SCK  10
 #define IMU_PIN_CS   13
 #else
-#define IMU_I2C_INST i2c1
+#define IMU_I2C_INST i2c0
 #ifdef IMU_MODEL_MPU6050
-#define IMU_ADDRESS  0x68
+#define IMU_ADDRESS 0x68
 #else
-#define IMU_ADDRESS  0x6B
+#define IMU_ADDRESS 0x6B
 #endif
-#define IMU_PIN_SDA  14
-#define IMU_PIN_SCL  15
+#define IMU_PIN_SDA 8
+#define IMU_PIN_SCL 9
 #endif
 
 #endif // _HARDWARE_CONFIG_H

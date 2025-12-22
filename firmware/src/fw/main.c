@@ -1041,7 +1041,7 @@ static void on_idle() {
 
     static absolute_time_t timeout = {0};
     if (absolute_time_diff_us(get_absolute_time(), timeout) < 0) {
-        timeout = make_timeout_time_ms(1000);
+        timeout = make_timeout_time_ms(500);
 
         uint8_t voltage_percentage = ((read_voltage() - BATTERY_MIN_V) / BATTERY_RANGE) * 100;
         static char battery_str[] = " PWR";
@@ -1068,26 +1068,60 @@ static void on_idle() {
         if (shock_sensor.check_availability(&shock_sensor)) {
             ssd1306_draw_string(&disp, 40, 24, 1, "shock");
         }
-        if (imu_sensor.available) {
-            struct imu_interpretation imu_data;
-            imu_sensor_interpret(&imu_sensor, &imu_data);
+
+        if (imu_frame.available || imu_fork.available) {
+            struct imu_interpretation frame_data;
+            struct imu_interpretation fork_data;
+
+            if (imu_frame.available) {
+                imu_sensor_interpret(&imu_frame, &frame_data);
+            }
+            if (imu_fork.available) {
+                imu_sensor_interpret(&imu_fork, &fork_data);
+            }
 
             printf("\033[2J\033[H");
-            printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n", (double)imu_data.accel_forward_g,
-                   (double)imu_data.accel_left_g, (double)imu_data.accel_up_g);
-            printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n", (double)imu_data.pitch_deg,
-                   imu_data.pitch_state == IMU_PITCH_FRONT_UP
-                       ? "FRONT UP"
-                       : (imu_data.pitch_state == IMU_PITCH_FRONT_DOWN ? "FRONT DOWN" : "level"),
-                   (double)imu_data.roll_deg,
-                   imu_data.roll_state == IMU_ROLL_RIGHT ? "RIGHT"
-                                                         : (imu_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));
-            printf("[IMU] Gyro: yaw %+.1f°/s, pitch %+.1f°/s, roll %+.1f°/s\n", (double)imu_data.yaw_rate_dps,
-                   (double)imu_data.pitch_rate_dps, (double)imu_data.roll_rate_dps);
-            printf("[IMU] Status: %s%s%s\n",
-                   (imu_data.pitch_state == IMU_PITCH_LEVEL && imu_data.roll_state == IMU_ROLL_LEVEL) ? "LEVEL"
-                                                                                                      : "TILTED",
-                   imu_data.is_rotating ? ", ROTATING" : "", imu_data.is_accelerating ? ", ACCEL" : "");
+
+            if (imu_frame.available) {
+                printf("FRAME\n");
+                printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n", (double)frame_data.accel_forward_g,
+                       (double)frame_data.accel_left_g, (double)frame_data.accel_up_g);
+                printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n", (double)frame_data.pitch_deg,
+                       frame_data.pitch_state == IMU_PITCH_FRONT_UP
+                           ? "FRONT UP"
+                           : (frame_data.pitch_state == IMU_PITCH_FRONT_DOWN ? "FRONT DOWN" : "level"),
+                       (double)frame_data.roll_deg,
+                       frame_data.roll_state == IMU_ROLL_RIGHT
+                           ? "RIGHT"
+                           : (frame_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));
+                printf("[IMU] Gyro: yaw %+.1f°/s, pitch %+.1f°/s, roll %+.1f°/s\n", (double)frame_data.yaw_rate_dps,
+                       (double)frame_data.pitch_rate_dps, (double)frame_data.roll_rate_dps);
+                printf("[IMU] Status: %s%s%s\n",
+                       (frame_data.pitch_state == IMU_PITCH_LEVEL && frame_data.roll_state == IMU_ROLL_LEVEL)
+                           ? "LEVEL"
+                           : "TILTED",
+                       frame_data.is_rotating ? ", ROTATING" : "", frame_data.is_accelerating ? ", ACCEL" : "");
+            }
+
+            if (imu_fork.available) {
+                printf("FORK\n");
+                printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n", (double)fork_data.accel_forward_g,
+                       (double)fork_data.accel_left_g, (double)fork_data.accel_up_g);
+                printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n", (double)fork_data.pitch_deg,
+                       fork_data.pitch_state == IMU_PITCH_FRONT_UP
+                           ? "FRONT UP"
+                           : (fork_data.pitch_state == IMU_PITCH_FRONT_DOWN ? "FRONT DOWN" : "level"),
+                       (double)fork_data.roll_deg,
+                       fork_data.roll_state == IMU_ROLL_RIGHT
+                           ? "RIGHT"
+                           : (fork_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));
+                printf("[IMU] Gyro: yaw %+.1f°/s, pitch %+.1f°/s, roll %+.1f°/s\n", (double)fork_data.yaw_rate_dps,
+                       (double)fork_data.pitch_rate_dps, (double)fork_data.roll_rate_dps);
+                printf("[IMU] Status: %s%s%s\n",
+                       (fork_data.pitch_state == IMU_PITCH_LEVEL && fork_data.roll_state == IMU_ROLL_LEVEL) ? "LEVEL"
+                                                                                                            : "TILTED",
+                       fork_data.is_rotating ? ", ROTATING" : "", fork_data.is_accelerating ? ", ACCEL" : "");
+            }
         }
         ssd1306_show(&disp);
     }

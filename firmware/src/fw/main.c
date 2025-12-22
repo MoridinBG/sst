@@ -709,7 +709,8 @@ static void on_cal_trvl_comp() {
 
     LOG("CAL", "Calibration saved successfully\n");
 
-    if (imu_sensor.available) {
+    bool imu_active = imu_frame.available || imu_fork.available || imu_rear.available;
+    if (imu_active) {
         state = CAL_IMU_IDLE_1;
     } else {
         state = IDLE;
@@ -737,7 +738,18 @@ static void on_cal_imu_stationary() {
     display_message(&disp, "CALIB...");
     LOG("CAL", "Starting IMU stationary calibration\n");
 
-    imu_sensor_calibrate_stationary(&imu_sensor);
+    if (imu_frame.available) {
+        LOG("CAL", "Calibrating Frame IMU stationary\n");
+        imu_sensor_calibrate_stationary(&imu_frame);
+    }
+    if (imu_fork.available) {
+        LOG("CAL", "Calibrating Fork IMU stationary\n");
+        imu_sensor_calibrate_stationary(&imu_fork);
+    }
+    if (imu_rear.available) {
+        LOG("CAL", "Calibrating Rear IMU stationary\n");
+        imu_sensor_calibrate_stationary(&imu_rear);
+    }
 
     LOG("CAL", "IMU stationary calibration complete\n");
     state = CAL_IMU_IDLE_2;
@@ -747,7 +759,18 @@ static void on_cal_imu_tilt() {
     display_message(&disp, "CALIB...");
     LOG("CAL", "Starting IMU tilt calibration\n");
 
-    imu_sensor_calibrate_tilted(&imu_sensor);
+    if (imu_frame.available) {
+        LOG("CAL", "Calibrating Frame IMU tilt\n");
+        imu_sensor_calibrate_tilted(&imu_frame);
+    }
+    if (imu_fork.available) {
+        LOG("CAL", "Calibrating Fork IMU tilt\n");
+        imu_sensor_calibrate_tilted(&imu_fork);
+    }
+    if (imu_rear.available) {
+        LOG("CAL", "Calibrating Rear IMU tilt\n");
+        imu_sensor_calibrate_tilted(&imu_rear);
+    }
 
     LOG("CAL", "IMU tilt calibration complete\n");
 
@@ -756,20 +779,31 @@ static void on_cal_imu_tilt() {
     if (fr == FR_OK) {
         f_lseek(&calibration_fil, 7);
         uint bw;
-        uint8_t magic = 'I';
-        f_write(&calibration_fil, &magic, 1, &bw);
-        f_write(&calibration_fil, &imu_sensor.calibration.gyro_bias, 6, &bw);
-        f_write(&calibration_fil, &imu_sensor.calibration.accel_bias, 6, &bw);
-        f_write(&calibration_fil, &imu_sensor.calibration.rotation, 36, &bw);
-        f_write(&calibration_fil, &imu_sensor.calibration.cal_temperature, 2, &bw);
+        if (imu_frame.available) {
+            uint8_t magic = 'I';
+            f_write(&calibration_fil, &magic, 1, &bw);
+            f_write(&calibration_fil, &imu_frame.calibration.gyro_bias, 6, &bw);
+            f_write(&calibration_fil, &imu_frame.calibration.accel_bias, 6, &bw);
+            f_write(&calibration_fil, &imu_frame.calibration.rotation, 36, &bw);
+            f_write(&calibration_fil, &imu_frame.calibration.cal_temperature, 2, &bw);
+        }
+        if (imu_fork.available) {
+            uint8_t magic = 'F';
+            f_write(&calibration_fil, &magic, 1, &bw);
+            f_write(&calibration_fil, &imu_fork.calibration.gyro_bias, 6, &bw);
+            f_write(&calibration_fil, &imu_fork.calibration.accel_bias, 6, &bw);
+            f_write(&calibration_fil, &imu_fork.calibration.rotation, 36, &bw);
+            f_write(&calibration_fil, &imu_fork.calibration.cal_temperature, 2, &bw);
+        }
+        if (imu_rear.available) {
+            uint8_t magic = 'R';
+            f_write(&calibration_fil, &magic, 1, &bw);
+            f_write(&calibration_fil, &imu_rear.calibration.gyro_bias, 6, &bw);
+            f_write(&calibration_fil, &imu_rear.calibration.accel_bias, 6, &bw);
+            f_write(&calibration_fil, &imu_rear.calibration.rotation, 36, &bw);
+            f_write(&calibration_fil, &imu_rear.calibration.cal_temperature, 2, &bw);
+        }
         f_close(&calibration_fil);
-        LOG("CAL", "IMU rotation matrix:\n");
-        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[0][0],
-            (double)imu_sensor.calibration.rotation.matrix[0][1], (double)imu_sensor.calibration.rotation.matrix[0][2]);
-        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[1][0],
-            (double)imu_sensor.calibration.rotation.matrix[1][1], (double)imu_sensor.calibration.rotation.matrix[1][2]);
-        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[2][0],
-            (double)imu_sensor.calibration.rotation.matrix[2][1], (double)imu_sensor.calibration.rotation.matrix[2][2]);
         display_message(&disp, "CAL OK");
         sleep_ms(1000);
     } else {

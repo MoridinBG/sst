@@ -376,48 +376,59 @@ static bool start_sensors() {
         return false;
     }
 
-    FSIZE_t file_size = f_size(&calibration_fil);
-    if (file_size != 7 && file_size != 58) {
-        LOG("CAL", "Invalid calibration file size: %u\n", (uint)file_size);
-        f_close(&calibration_fil);
-        return false;
-    }
-
     uint br;
     uint8_t magic;
+    uint16_t f_base, s_base;
+    uint8_t f_inv_u8, s_inv_u8;
+
+    // Read Travel Data first (Mandatory)
     f_read(&calibration_fil, &magic, 1, &br);
     if (magic != 'T') {
         LOG("CAL", "Invalid telemetry magic: 0x%02x\n", magic);
         f_close(&calibration_fil);
         return false;
     }
-
-    uint16_t f_base, s_base;
-    uint8_t f_inv_u8, s_inv_u8;
     f_read(&calibration_fil, &f_base, 2, &br);
     f_read(&calibration_fil, &f_inv_u8, 1, &br);
     f_read(&calibration_fil, &s_base, 2, &br);
     f_read(&calibration_fil, &s_inv_u8, 1, &br);
 
-    if (file_size == 58) {
-        f_read(&calibration_fil, &magic, 1, &br);
-        if (magic != 'I') {
-            LOG("CAL", "Invalid IMU magic: 0x%02x\n", magic);
-            f_close(&calibration_fil);
-            return false;
+    // Loop through remaining file for IMU calibrations
+    while (f_read(&calibration_fil, &magic, 1, &br) == FR_OK && br == 1) {
+        if (magic == 'I') {
+            if (imu_frame.available) {
+                f_read(&calibration_fil, &imu_frame.calibration.gyro_bias, 6, &br);
+                f_read(&calibration_fil, &imu_frame.calibration.accel_bias, 6, &br);
+                f_read(&calibration_fil, &imu_frame.calibration.rotation, 36, &br);
+                f_read(&calibration_fil, &imu_frame.calibration.cal_temperature, 2, &br);
+                LOG("CAL", "Frame IMU calibration loaded\n");
+            } else {
+                f_lseek(&calibration_fil, f_tell(&calibration_fil) + 50);
+            }
+        } else if (magic == 'F') {
+            if (imu_fork.available) {
+                f_read(&calibration_fil, &imu_fork.calibration.gyro_bias, 6, &br);
+                f_read(&calibration_fil, &imu_fork.calibration.accel_bias, 6, &br);
+                f_read(&calibration_fil, &imu_fork.calibration.rotation, 36, &br);
+                f_read(&calibration_fil, &imu_fork.calibration.cal_temperature, 2, &br);
+                LOG("CAL", "Fork IMU calibration loaded\n");
+            } else {
+                f_lseek(&calibration_fil, f_tell(&calibration_fil) + 50);
+            }
+        } else if (magic == 'R') {
+            if (imu_rear.available) {
+                f_read(&calibration_fil, &imu_rear.calibration.gyro_bias, 6, &br);
+                f_read(&calibration_fil, &imu_rear.calibration.accel_bias, 6, &br);
+                f_read(&calibration_fil, &imu_rear.calibration.rotation, 36, &br);
+                f_read(&calibration_fil, &imu_rear.calibration.cal_temperature, 2, &br);
+                LOG("CAL", "Rear IMU calibration loaded\n");
+            } else {
+                f_lseek(&calibration_fil, f_tell(&calibration_fil) + 50);
+            }
+        } else {
+            LOG("CAL", "Unknown magic: 0x%02x\n", magic);
+            break;
         }
-        f_read(&calibration_fil, &imu_sensor.calibration.gyro_bias, 6, &br);
-        f_read(&calibration_fil, &imu_sensor.calibration.accel_bias, 6, &br);
-        f_read(&calibration_fil, &imu_sensor.calibration.rotation, 36, &br);
-        f_read(&calibration_fil, &imu_sensor.calibration.cal_temperature, 2, &br);
-        LOG("CAL", "IMU calibration loaded\n");
-        LOG("CAL", "Rotation matrix:\n");
-        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[0][0],
-            (double)imu_sensor.calibration.rotation.matrix[0][1], (double)imu_sensor.calibration.rotation.matrix[0][2]);
-        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[1][0],
-            (double)imu_sensor.calibration.rotation.matrix[1][1], (double)imu_sensor.calibration.rotation.matrix[1][2]);
-        LOG("CAL", "  [%0.3f, %0.3f, %0.3f]\n", (double)imu_sensor.calibration.rotation.matrix[2][0],
-            (double)imu_sensor.calibration.rotation.matrix[2][1], (double)imu_sensor.calibration.rotation.matrix[2][2]);
     }
 
     f_close(&calibration_fil);

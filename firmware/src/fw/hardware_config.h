@@ -102,14 +102,14 @@
 #define IMU_FRAME_PIN_SCK  10
 #define IMU_FRAME_PIN_CS   13
 #else
-#define IMU_FRAME_I2C_INST i2c0
+#define IMU_FRAME_I2C_INST i2c1
 #if IMU_FRAME == IMU_MPU6050
 #define IMU_FRAME_ADDRESS 0x68
 #else
 #define IMU_FRAME_ADDRESS 0x6B
 #endif
-#define IMU_FRAME_PIN_SDA 8
-#define IMU_FRAME_PIN_SCL 9
+#define IMU_FRAME_PIN_SDA 14
+#define IMU_FRAME_PIN_SCL 15
 #endif
 #endif
 
@@ -126,14 +126,14 @@
 #define IMU_FORK_PIN_SCK  10
 #define IMU_FORK_PIN_CS   13
 #else
-#define IMU_FORK_I2C_INST i2c1
+#define IMU_FORK_I2C_INST i2c0
 #if IMU_FORK == IMU_MPU6050
 #define IMU_FORK_ADDRESS 0x68
 #else
 #define IMU_FORK_ADDRESS 0x6B
 #endif
-#define IMU_FORK_PIN_SDA 14
-#define IMU_FORK_PIN_SCL 15
+#define IMU_FORK_PIN_SDA 8
+#define IMU_FORK_PIN_SCL 9
 #endif
 #endif
 

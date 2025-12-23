@@ -27,6 +27,10 @@ const (
 	VELOCITY_HIST_STEP                  = 100.0 // (mm/s) step between velocity histogram bins
 	VELOCITY_HIST_STEP_FINE             = 15.0  // (mm/s) step between fine-grained velocity histogram bins
 	BOTTOMOUT_THRESHOLD                 = 3     // (mm) bottomouts are regions where travel > max_travel - this value
+
+	ImuLocationFrame = 0
+	ImuLocationFork  = 1
+	ImuLocationRear  = 2
 )
 
 type LinkageRecord struct {
@@ -60,6 +64,29 @@ type suspension struct {
 	FineVelocityBins []float64
 }
 
+type ImuRecord struct {
+	Ax, Ay, Az int16
+	Gx, Gy, Gz int16
+}
+
+type ImuMetaEntry struct {
+	LocationID    uint8
+	AccelLsbPerG  float32
+	GyroLsbPerDps float32
+}
+
+type IMU struct {
+	Present       bool
+	AccelLsbPerG  float32
+	GyroLsbPerDps float32
+	Ax            []int16
+	Ay            []int16
+	Az            []int16
+	Gx            []int16
+	Gy            []int16
+	Gz            []int16
+}
+
 type Number interface {
 	constraints.Float | constraints.Integer
 }
@@ -68,6 +95,7 @@ type Meta struct {
 	Name                string
 	Version             uint8
 	TelemetrySampleRate uint16
+	IMUSampleRate       uint16
 	Timestamp           int64
 }
 
@@ -81,6 +109,9 @@ type Processed struct {
 	Meta
 	Front    suspension
 	Rear     suspension
+	IMUFrame IMU
+	IMUFork  IMU
+	IMURear  IMU
 	Linkage  Linkage
 	Airtimes []*airtime
 	Markers  []float64
@@ -151,13 +182,57 @@ func (e *RecordCountMismatchError) Error() string {
 	return "Front and rear record counts are not equal"
 }
 
-func ProcessRecording[T Number](front, rear []T, markers []float64, meta Meta, setup *SetupData) (*Processed, error) {
+func populateIMU(dest *IMU, src []ImuRecord, meta ImuMetaEntry) {
+	if len(src) == 0 {
+		dest.Present = false
+		return
+	}
+	dest.Present = true
+	dest.AccelLsbPerG = meta.AccelLsbPerG
+	dest.GyroLsbPerDps = meta.GyroLsbPerDps
+
+	count := len(src)
+	dest.Ax = make([]int16, count)
+	dest.Ay = make([]int16, count)
+	dest.Az = make([]int16, count)
+	dest.Gx = make([]int16, count)
+	dest.Gy = make([]int16, count)
+	dest.Gz = make([]int16, count)
+
+	for i, r := range src {
+		dest.Ax[i] = r.Ax
+		dest.Ay[i] = r.Ay
+		dest.Az[i] = r.Az
+		dest.Gx[i] = r.Gx
+		dest.Gy[i] = r.Gy
+		dest.Gz[i] = r.Gz
+	}
+}
+
+func ProcessRecording[T Number](
+	front, rear []T,
+	imuFrame, imuFork, imuRear []ImuRecord,
+	imuMeta map[uint8]ImuMetaEntry,
+	markers []float64,
+	meta Meta,
+	setup *SetupData,
+) (*Processed, error) {
 	var pd Processed
 	pd.Meta = meta
 	pd.Front.Calibration = *setup.FrontCalibration
 	pd.Rear.Calibration = *setup.RearCalibration
 	pd.Linkage = *setup.Linkage
 	pd.Markers = markers
+
+	if entry, ok := imuMeta[uint8(ImuLocationFrame)]; ok {
+		populateIMU(&pd.IMUFrame, imuFrame, entry)
+	}
+	if entry, ok := imuMeta[uint8(ImuLocationFork)]; ok {
+		populateIMU(&pd.IMUFork, imuFork, entry)
+	}
+	if entry, ok := imuMeta[uint8(ImuLocationRear)]; ok {
+		populateIMU(&pd.IMURear, imuRear, entry)
+	}
 
 	fc := len(front)
 	rc := len(rear)

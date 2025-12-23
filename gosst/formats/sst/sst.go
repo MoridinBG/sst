@@ -13,6 +13,8 @@ const (
 	ChunkTypeRates     = 0x00
 	ChunkTypeTelemetry = 0x01
 	ChunkTypeMarker    = 0x02
+	ChunkTypeIMU       = 0x03
+	ChunkTypeIMUMeta   = 0x04
 )
 
 type header struct {
@@ -51,7 +53,14 @@ func (e *VersionError) Error() string {
 	return fmt.Sprintf("Unsupported SST version: %d", e.Version)
 }
 
-func ProcessRaw(sst_data []byte) (front, rear []uint16, markers []float64, meta psst.Meta, err error) {
+func ProcessRaw(sst_data []byte) (
+	front, rear []uint16,
+	imuFrame, imuFork, imuRear []psst.ImuRecord,
+	imuMeta map[uint8]psst.ImuMetaEntry,
+	markers []float64,
+	meta psst.Meta,
+	err error,
+) {
 	f := bytes.NewReader(sst_data)
 	var fileHeader header
 	err = binary.Read(f, binary.LittleEndian, &fileHeader)
@@ -72,9 +81,11 @@ func ProcessRaw(sst_data []byte) (front, rear []uint16, markers []float64, meta 
 	meta.Version = fileHeader.Version
 	meta.Timestamp = fileHeader.Timestamp
 	meta.Name = "SST Session"
+	imuMeta = make(map[uint8]psst.ImuMetaEntry)
 
 	var records []record
 	var totalTelemetrySamples int
+	var activeImuLocations []uint8
 
 	for {
 		var ch chunkHeader
@@ -97,6 +108,8 @@ func ProcessRaw(sst_data []byte) (front, rear []uint16, markers []float64, meta 
 				}
 				if re.Type == ChunkTypeTelemetry {
 					meta.TelemetrySampleRate = re.Rate
+				} else if re.Type == ChunkTypeIMU {
+					meta.IMUSampleRate = re.Rate
 				}
 			}
 		case ChunkTypeTelemetry:
@@ -110,6 +123,40 @@ func ProcessRaw(sst_data []byte) (front, rear []uint16, markers []float64, meta 
 		case ChunkTypeMarker:
 			if meta.TelemetrySampleRate > 0 {
 				markers = append(markers, float64(totalTelemetrySamples)/float64(meta.TelemetrySampleRate))
+			}
+		case ChunkTypeIMUMeta:
+			var count uint8
+			if err = binary.Read(f, binary.LittleEndian, &count); err != nil {
+				return
+			}
+			for i := 0; i < int(count); i++ {
+				var entry psst.ImuMetaEntry
+				if err = binary.Read(f, binary.LittleEndian, &entry); err != nil {
+					return
+				}
+				imuMeta[entry.LocationID] = entry
+				activeImuLocations = append(activeImuLocations, entry.LocationID)
+			}
+		case ChunkTypeIMU:
+			numSamples := int(ch.Length) / 12
+			chunkRecords := make([]psst.ImuRecord, numSamples)
+			if err = binary.Read(f, binary.LittleEndian, &chunkRecords); err != nil {
+				return
+			}
+
+			imuCount := len(activeImuLocations)
+			if imuCount > 0 {
+				for i, rec := range chunkRecords {
+					locId := activeImuLocations[i%imuCount]
+					switch locId {
+					case psst.ImuLocationFrame:
+						imuFrame = append(imuFrame, rec)
+					case psst.ImuLocationFork:
+						imuFork = append(imuFork, rec)
+					case psst.ImuLocationRear:
+						imuRear = append(imuRear, rec)
+					}
+				}
 			}
 		default:
 			// Skip unknown chunk

@@ -51,12 +51,12 @@ func putSession(db *sql.DB, h codec.Handle, board [10]byte, server, name string,
 		return uuid.Nil, err
 	}
 
-	front, rear, markers, meta, err := sst.ProcessRaw(sst_data)
+	front, rear, imuFrame, imuFork, imuRear, imuMeta, markers, meta, err := sst.ProcessRaw(sst_data)
 	if err != nil {
 		return uuid.Nil, err
 	}
 	meta.Name = name
-	pd, err := psst.ProcessRecording(front, rear, markers, meta, setup)
+	pd, err := psst.ProcessRecording(front, rear, imuFrame, imuFork, imuRear, imuMeta, markers, meta, setup)
 	if err != nil {
 		return uuid.Nil, err
 	}

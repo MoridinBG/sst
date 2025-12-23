@@ -135,13 +135,13 @@ func (this *RequestHandler) PutSession(c *gin.Context) {
 		return
 	}
 
-	front, rear, markers, meta, err := sst.ProcessRaw(sst_data)
+	front, rear, imuFrame, imuFork, imuRear, imuMeta, markers, meta, err := sst.ProcessRaw(sst_data)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	meta.Name = session.Name
-	pd, err := psst.ProcessRecording(front, rear, markers, meta, setup)
+	pd, err := psst.ProcessRecording(front, rear, imuFrame, imuFork, imuRear, imuMeta, markers, meta, setup)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -210,7 +210,7 @@ func (this *RequestHandler) PutNormalizedSession(c *gin.Context) {
 		FrontCalibration: fcal,
 		RearCalibration:  rcal,
 	}
-	pd, err := psst.ProcessRecording(front, rear, nil, meta, setup)
+	pd, err := psst.ProcessRecording(front, rear, nil, nil, nil, nil, nil, meta, setup)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

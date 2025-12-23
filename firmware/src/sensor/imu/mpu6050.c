@@ -83,7 +83,6 @@ bool mpu6050_check_availability(struct imu_sensor *imu) {
     for (int i = 0; i < 5; i++) {
         id = read_register(imu, REG_WHO_AM_I);
         if (id == 0x68) {
-            printf("[MPU6050] Device found!\n");
             return true;
         }
         sleep_ms(10);

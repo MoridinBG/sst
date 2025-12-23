@@ -110,7 +110,6 @@ bool lsm6dso_check_availability(struct imu_sensor *imu) {
     for (int i = 0; i < 5; i++) {
         id = read_register(imu, WHO_AM_I);
         if (id == 0x6C) {
-            printf("[LSM6DSO] Device not found!\n");
             return true;
         }
         sleep_ms(10);

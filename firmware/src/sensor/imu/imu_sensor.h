@@ -102,6 +102,9 @@ struct imu_sensor {
     // Calibration functions
     void (*calibrate_phase1)(struct imu_sensor *imu);
     void (*calibrate_forward)(struct imu_sensor *imu);
+
+    // Internal calibration state
+    float g_sensor[3];
 };
 
 // Interpretation state enums

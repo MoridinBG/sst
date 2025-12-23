@@ -4,9 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Gravity vector from stationary calibration (used by tilt calibration)
-static float g_sensor[3];
-
 bool imu_sensor_init(struct imu_sensor *imu) {
     if (imu->init) {
         imu->init(imu);
@@ -167,9 +164,9 @@ void imu_sensor_calibrate_stationary(struct imu_sensor *imu) {
     imu->calibration.gyro_bias[2] = gyro_sum[2] / CALIBRATION_SAMPLES;
 
     // Store gravity vector (will be normalized later)
-    g_sensor[0] = accel_sum[0] / (float)CALIBRATION_SAMPLES;
-    g_sensor[1] = accel_sum[1] / (float)CALIBRATION_SAMPLES;
-    g_sensor[2] = accel_sum[2] / (float)CALIBRATION_SAMPLES;
+    imu->g_sensor[0] = accel_sum[0] / (float)CALIBRATION_SAMPLES;
+    imu->g_sensor[1] = accel_sum[1] / (float)CALIBRATION_SAMPLES;
+    imu->g_sensor[2] = accel_sum[2] / (float)CALIBRATION_SAMPLES;
 }
 
 void imu_sensor_calibrate_tilted(struct imu_sensor *imu) {
@@ -197,11 +194,11 @@ void imu_sensor_calibrate_tilted(struct imu_sensor *imu) {
     // When front is up, accelerometer reaction tilts forward
     // Difference (tilted - level) points forward
     float f_sensor[3];
-    f_sensor[0] = g_tilted[0] - g_sensor[0];
-    f_sensor[1] = g_tilted[1] - g_sensor[1];
-    f_sensor[2] = g_tilted[2] - g_sensor[2];
+    f_sensor[0] = g_tilted[0] - imu->g_sensor[0];
+    f_sensor[1] = g_tilted[1] - imu->g_sensor[1];
+    f_sensor[2] = g_tilted[2] - imu->g_sensor[2];
 
-    build_rotation_matrix(g_sensor, f_sensor, &imu->calibration.rotation);
+    build_rotation_matrix(imu->g_sensor, f_sensor, &imu->calibration.rotation);
 }
 
 #define LEVEL_THRESHOLD_DEG      5.0f

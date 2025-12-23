@@ -17,16 +17,8 @@ enum state {
     SYNC_DATA,
     SERVE_TCP,
     MSC,
-    CAL_TRVL_IDLE_1,
-    CAL_TRVL_EXP,
-    CAL_TRVL_IDLE_2,
-    CAL_TRVL_COMP,
-    CAL_IMU_IDLE_1,
-    CAL_IMU_STATIONARY,
-    CAL_IMU_IDLE_2,
-    CAL_IMU_TILT,
 };
-#define STATES_COUNT 17
+#define STATES_COUNT 9
 
 #define CHUNK_TYPE_RATES 0x00
 #define CHUNK_TYPE_TELEMETRY 0x01

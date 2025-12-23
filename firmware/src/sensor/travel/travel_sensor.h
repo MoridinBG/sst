@@ -1,3 +1,6 @@
+#ifndef TRAVEL_SENSOR_H
+#define TRAVEL_SENSOR_H
+
 #include <hardware/i2c.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -35,3 +38,5 @@ struct travel_sensor {
     void (*calibrate_compressed)(struct travel_sensor *sensor);
     uint16_t (*measure)(struct travel_sensor *sensor);
 };
+
+#endif // TRAVEL_SENSOR_H

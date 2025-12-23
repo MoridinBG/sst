@@ -38,6 +38,7 @@
 #include "../util/config.h"
 #include "../util/list.h"
 #include "../util/log.h"
+#include "calibration_flow.h"
 #include "sst.h"
 
 #include "hardware_config.h"
@@ -59,6 +60,8 @@ struct ds3231 rtc;
 
 extern struct travel_sensor fork_sensor;
 extern struct travel_sensor shock_sensor;
+
+static struct calibration_ctx cal_ctx;
 
 #if IMU_FRAME == IMU_MPU6050
 struct imu_sensor imu_frame = {
@@ -254,24 +257,6 @@ static void wifi_disconnect() {
     sleep_ms(100);
 }
 
-static void calibrate_if_needed() {
-    gpio_init(BUTTON_LEFT);
-    gpio_pull_up(BUTTON_LEFT);
-
-    FRESULT fr = f_stat("CALIBRATION", NULL);
-    bool button_pressed = !gpio_get(BUTTON_LEFT);
-    LOG("CAL", "CALIBRATION file %s, button %s\n", fr == FR_OK ? "exists" : "missing",
-        button_pressed ? "pressed" : "not pressed");
-
-    if (fr != FR_OK || button_pressed) {
-        LOG("CAL", "Entering calibration mode\n");
-        state = CAL_TRVL_IDLE_1;
-    } else {
-        LOG("CAL", "Skipping calibration\n");
-        state = IDLE;
-    }
-}
-
 // ----------------------------------------------------------------------------
 // Data acquisition
 
@@ -326,7 +311,7 @@ static bool telemetry_cb(repeating_timer_t *rt) {
     active_telemetry_buffer[telemetry_count].fork_angle = fork_sensor.measure(&fork_sensor);
     active_telemetry_buffer[telemetry_count].shock_angle = shock_sensor.measure(&shock_sensor);
     telemetry_count += 1;
-    total_telemetry_samples += 1;
+    // total_telemetry_samples += 1;
 
     if (marker_pending) {
         dump_active_telemetry_buffer(telemetry_count);
@@ -390,92 +375,9 @@ static bool imu_cb(repeating_timer_t *rt) {
         imu_count++;
     }
 
-    total_imu_samples += 1;
+    // total_imu_samples += 1;
 
     return state == RECORD;
-}
-
-static bool start_sensors() {
-    absolute_time_t timeout = make_timeout_time_ms(3000);
-    while (!(fork_sensor.check_availability(&fork_sensor) || shock_sensor.check_availability(&shock_sensor))) {
-        if (absolute_time_diff_us(get_absolute_time(), timeout) < 0) {
-            return false;
-        }
-        sleep_ms(10);
-    }
-
-    FIL calibration_fil;
-    FRESULT fr = f_open(&calibration_fil, "CALIBRATION", FA_OPEN_EXISTING | FA_READ);
-    if (fr != FR_OK) {
-        LOG("CAL", "No CALIBRATION file found\n");
-        return false;
-    }
-
-    uint br;
-    uint8_t magic;
-    uint16_t f_base, s_base;
-    uint8_t f_inv_u8, s_inv_u8;
-
-    // Read Travel Data first (Mandatory)
-    f_read(&calibration_fil, &magic, 1, &br);
-    if (magic != 'T') {
-        LOG("CAL", "Invalid telemetry magic: 0x%02x\n", magic);
-        f_close(&calibration_fil);
-        return false;
-    }
-    f_read(&calibration_fil, &f_base, 2, &br);
-    f_read(&calibration_fil, &f_inv_u8, 1, &br);
-    f_read(&calibration_fil, &s_base, 2, &br);
-    f_read(&calibration_fil, &s_inv_u8, 1, &br);
-
-    // Loop through remaining file for IMU calibrations
-    while (f_read(&calibration_fil, &magic, 1, &br) == FR_OK && br == 1) {
-        if (magic == 'I') {
-            if (imu_frame.available) {
-                f_read(&calibration_fil, &imu_frame.calibration.gyro_bias, 6, &br);
-                f_read(&calibration_fil, &imu_frame.calibration.accel_bias, 6, &br);
-                f_read(&calibration_fil, &imu_frame.calibration.rotation, 36, &br);
-                f_read(&calibration_fil, &imu_frame.calibration.cal_temperature, 2, &br);
-                LOG("CAL", "Frame IMU calibration loaded\n");
-            } else {
-                f_lseek(&calibration_fil, f_tell(&calibration_fil) + 50);
-            }
-        } else if (magic == 'F') {
-            if (imu_fork.available) {
-                f_read(&calibration_fil, &imu_fork.calibration.gyro_bias, 6, &br);
-                f_read(&calibration_fil, &imu_fork.calibration.accel_bias, 6, &br);
-                f_read(&calibration_fil, &imu_fork.calibration.rotation, 36, &br);
-                f_read(&calibration_fil, &imu_fork.calibration.cal_temperature, 2, &br);
-                LOG("CAL", "Fork IMU calibration loaded\n");
-            } else {
-                f_lseek(&calibration_fil, f_tell(&calibration_fil) + 50);
-            }
-        } else if (magic == 'R') {
-            if (imu_rear.available) {
-                f_read(&calibration_fil, &imu_rear.calibration.gyro_bias, 6, &br);
-                f_read(&calibration_fil, &imu_rear.calibration.accel_bias, 6, &br);
-                f_read(&calibration_fil, &imu_rear.calibration.rotation, 36, &br);
-                f_read(&calibration_fil, &imu_rear.calibration.cal_temperature, 2, &br);
-                LOG("CAL", "Rear IMU calibration loaded\n");
-            } else {
-                f_lseek(&calibration_fil, f_tell(&calibration_fil) + 50);
-            }
-        } else {
-            LOG("CAL", "Unknown magic: 0x%02x\n", magic);
-            break;
-        }
-    }
-
-    f_close(&calibration_fil);
-
-    fork_sensor.start(&fork_sensor, f_base, f_inv_u8 != 0);
-    shock_sensor.start(&shock_sensor, s_base, s_inv_u8 != 0);
-
-    LOG("CAL", "Fork sensor: baseline=0x%04x, inverted=%d, available=%d\n", f_base, f_inv_u8, fork_sensor.available);
-    LOG("SENSOR", "Shock sensor: baseline=0x%04x, inverted=%d, available=%d\n", s_base, s_inv_u8,
-        shock_sensor.available);
-
-    return fork_sensor.available || shock_sensor.available;
 }
 
 // ----------------------------------------------------------------------------
@@ -691,207 +593,6 @@ static void setup_display(ssd1306_t *disp) {
 // ----------------------------------------------------------------------------
 // State handlers
 
-static void on_cal_trvl_idle() {
-    // No MSC if there is no USB cable connected, so checking
-    // tud is not necessary.
-    bool battery = on_battery();
-    if (!battery && msc_present()) {
-        soft_reset();
-    }
-
-    static absolute_time_t timeout = {0};
-    if (absolute_time_diff_us(get_absolute_time(), timeout) < 0) {
-        timeout = make_timeout_time_ms(1000);
-
-        uint8_t voltage_percentage = ((read_voltage() - BATTERY_MIN_V) / BATTERY_RANGE) * 100;
-        static char battery_str[] = " PWR";
-        if (battery) {
-            if (voltage_percentage > 99) {
-                snprintf(battery_str, sizeof(battery_str), "FULL");
-            } else {
-                snprintf(battery_str, sizeof(battery_str), "% 3d%%", voltage_percentage);
-            }
-        }
-
-        // Print sensor values
-        if (fork_sensor.check_availability(&fork_sensor)) {
-            uint16_t fork_val = fork_sensor.measure(&fork_sensor);
-            LOG("SENSOR", "Fork: 0x%04x\n", fork_val);
-        }
-        if (shock_sensor.check_availability(&shock_sensor)) {
-            uint16_t shock_val = shock_sensor.measure(&shock_sensor);
-            LOG("SENSOR", "Shock: 0x%04x\n", shock_val);
-        }
-
-        ssd1306_clear(&disp);
-        ssd1306_draw_string(&disp, 96, 0, 1, battery_str);
-        ssd1306_draw_string(&disp, 0, 0, 2, state == CAL_TRVL_IDLE_1 ? "CAL EXP" : "CAL COMP");
-        if (fork_sensor.check_availability(&fork_sensor)) {
-            ssd1306_draw_string(&disp, 0, 24, 1, "fork");
-        }
-        if (shock_sensor.check_availability(&shock_sensor)) {
-            ssd1306_draw_string(&disp, 40, 24, 1, "shock");
-        }
-        ssd1306_show(&disp);
-    }
-}
-
-static void on_cal_trvl_exp() {
-    LOG("CAL", "Calibrating expanded position\n");
-    fork_sensor.calibrate_expanded(&fork_sensor);
-    shock_sensor.calibrate_expanded(&shock_sensor);
-
-    LOG("CAL", "Fork baseline: 0x%04x, Shock baseline: 0x%04x\n", fork_sensor.baseline, shock_sensor.baseline);
-
-    if (fork_sensor.baseline == 0xffff && shock_sensor.baseline == 0xffff) {
-        LOG("CAL", "Error: Both sensors failed calibration\n");
-        display_message(&disp, "CAL ERR");
-        sleep_ms(1000);
-        state = CAL_TRVL_IDLE_1;
-        return;
-    }
-
-    LOG("CAL", "Expanded calibration complete\n");
-    state = CAL_TRVL_IDLE_2;
-}
-
-static void on_cal_trvl_comp() {
-    LOG("CAL", "Calibrating compressed position\n");
-    fork_sensor.calibrate_compressed(&fork_sensor);
-    shock_sensor.calibrate_compressed(&shock_sensor);
-
-    LOG("CAL", "Fork: baseline=0x%04x inverted=%d\n", fork_sensor.baseline, fork_sensor.inverted);
-    LOG("CAL", "Shock: baseline=0x%04x inverted=%d\n", shock_sensor.baseline, shock_sensor.inverted);
-
-    FIL calibration_fil;
-    FRESULT fr = f_open(&calibration_fil, "CALIBRATION", FA_CREATE_ALWAYS | FA_WRITE);
-    if (fr != FR_OK) {
-        LOG("CAL", "Error: Failed to open CALIBRATION file\n");
-        display_message(&disp, "CAL ERR");
-        sleep_ms(1000);
-        state = CAL_TRVL_IDLE_2;
-        return;
-    }
-
-    uint bw;
-    uint8_t magic = 'T';
-    f_write(&calibration_fil, &magic, 1, &bw);
-    f_write(&calibration_fil, &fork_sensor.baseline, 2, &bw);
-    uint8_t f_inv = fork_sensor.inverted ? 1 : 0;
-    f_write(&calibration_fil, &f_inv, 1, &bw);
-    f_write(&calibration_fil, &shock_sensor.baseline, 2, &bw);
-    uint8_t s_inv = shock_sensor.inverted ? 1 : 0;
-    f_write(&calibration_fil, &s_inv, 1, &bw);
-    f_close(&calibration_fil);
-
-    LOG("CAL", "Calibration saved successfully\n");
-
-    bool imu_active = imu_frame.available || imu_fork.available || imu_rear.available;
-    if (imu_active) {
-        state = CAL_IMU_IDLE_1;
-    } else {
-        state = IDLE;
-    }
-}
-
-static void on_cal_imu_idle() {
-    static absolute_time_t timeout = {0};
-    if (absolute_time_diff_us(get_absolute_time(), timeout) < 0) {
-        timeout = make_timeout_time_ms(1000);
-
-        ssd1306_clear(&disp);
-        if (state == CAL_IMU_IDLE_1) {
-            ssd1306_draw_string(&disp, 0, 0, 2, "IMU LEVEL");
-            ssd1306_draw_string(&disp, 0, 24, 1, "Hold level");
-        } else {
-            ssd1306_draw_string(&disp, 0, 0, 2, "IMU TILT");
-            ssd1306_draw_string(&disp, 0, 24, 1, "Front up");
-        }
-        ssd1306_show(&disp);
-    }
-}
-
-static void on_cal_imu_stationary() {
-    display_message(&disp, "CALIB...");
-    LOG("CAL", "Starting IMU stationary calibration\n");
-
-    if (imu_frame.available) {
-        LOG("CAL", "Calibrating Frame IMU stationary\n");
-        imu_sensor_calibrate_stationary(&imu_frame);
-    }
-    if (imu_fork.available) {
-        LOG("CAL", "Calibrating Fork IMU stationary\n");
-        imu_sensor_calibrate_stationary(&imu_fork);
-    }
-    if (imu_rear.available) {
-        LOG("CAL", "Calibrating Rear IMU stationary\n");
-        imu_sensor_calibrate_stationary(&imu_rear);
-    }
-
-    LOG("CAL", "IMU stationary calibration complete\n");
-    state = CAL_IMU_IDLE_2;
-}
-
-static void on_cal_imu_tilt() {
-    display_message(&disp, "CALIB...");
-    LOG("CAL", "Starting IMU tilt calibration\n");
-
-    if (imu_frame.available) {
-        LOG("CAL", "Calibrating Frame IMU tilt\n");
-        imu_sensor_calibrate_tilted(&imu_frame);
-    }
-    if (imu_fork.available) {
-        LOG("CAL", "Calibrating Fork IMU tilt\n");
-        imu_sensor_calibrate_tilted(&imu_fork);
-    }
-    if (imu_rear.available) {
-        LOG("CAL", "Calibrating Rear IMU tilt\n");
-        imu_sensor_calibrate_tilted(&imu_rear);
-    }
-
-    LOG("CAL", "IMU tilt calibration complete\n");
-
-    FIL calibration_fil;
-    FRESULT fr = f_open(&calibration_fil, "CALIBRATION", FA_OPEN_EXISTING | FA_WRITE);
-    if (fr == FR_OK) {
-        f_lseek(&calibration_fil, 7);
-        uint bw;
-        if (imu_frame.available) {
-            uint8_t magic = 'I';
-            f_write(&calibration_fil, &magic, 1, &bw);
-            f_write(&calibration_fil, &imu_frame.calibration.gyro_bias, 6, &bw);
-            f_write(&calibration_fil, &imu_frame.calibration.accel_bias, 6, &bw);
-            f_write(&calibration_fil, &imu_frame.calibration.rotation, 36, &bw);
-            f_write(&calibration_fil, &imu_frame.calibration.cal_temperature, 2, &bw);
-        }
-        if (imu_fork.available) {
-            uint8_t magic = 'F';
-            f_write(&calibration_fil, &magic, 1, &bw);
-            f_write(&calibration_fil, &imu_fork.calibration.gyro_bias, 6, &bw);
-            f_write(&calibration_fil, &imu_fork.calibration.accel_bias, 6, &bw);
-            f_write(&calibration_fil, &imu_fork.calibration.rotation, 36, &bw);
-            f_write(&calibration_fil, &imu_fork.calibration.cal_temperature, 2, &bw);
-        }
-        if (imu_rear.available) {
-            uint8_t magic = 'R';
-            f_write(&calibration_fil, &magic, 1, &bw);
-            f_write(&calibration_fil, &imu_rear.calibration.gyro_bias, 6, &bw);
-            f_write(&calibration_fil, &imu_rear.calibration.accel_bias, 6, &bw);
-            f_write(&calibration_fil, &imu_rear.calibration.rotation, 36, &bw);
-            f_write(&calibration_fil, &imu_rear.calibration.cal_temperature, 2, &bw);
-        }
-        f_close(&calibration_fil);
-        display_message(&disp, "CAL OK");
-        sleep_ms(1000);
-    } else {
-        LOG("CAL", "Failed to open CALIBRATION file\n");
-        display_message(&disp, "SAVE ERR");
-        sleep_ms(1000);
-    }
-
-    state = IDLE;
-}
-
 static void on_rec_start() {
     LOG("REC", "Starting recording session\n");
     telemetry_count = 0;
@@ -903,7 +604,7 @@ static void on_rec_start() {
     multicore_fifo_drain();
 
     display_message(&disp, "INIT SENS");
-    if (!start_sensors()) {
+    if (!calibration_apply_to_sensors(&cal_ctx)) {
         LOG("REC", "No sensors available\n");
         display_message(&disp, "NO SENS");
         sleep_ms(1000);
@@ -1066,62 +767,13 @@ static void on_idle() {
             ssd1306_draw_string(&disp, 0, 24, 1, "fork");
         }
         if (shock_sensor.check_availability(&shock_sensor)) {
-            ssd1306_draw_string(&disp, 40, 24, 1, "shock");
+            ssd1306_draw_string(&disp, 30, 24, 1, "shock");
         }
-
-        if (imu_frame.available || imu_fork.available) {
-            struct imu_interpretation frame_data;
-            struct imu_interpretation fork_data;
-
-            if (imu_frame.available) {
-                imu_sensor_interpret(&imu_frame, &frame_data);
-            }
-            if (imu_fork.available) {
-                imu_sensor_interpret(&imu_fork, &fork_data);
-            }
-
-            printf("\033[2J\033[H");
-
-            if (imu_frame.available) {
-                printf("FRAME\n");
-                printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n", (double)frame_data.accel_forward_g,
-                       (double)frame_data.accel_left_g, (double)frame_data.accel_up_g);
-                printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n", (double)frame_data.pitch_deg,
-                       frame_data.pitch_state == IMU_PITCH_FRONT_UP
-                           ? "FRONT UP"
-                           : (frame_data.pitch_state == IMU_PITCH_FRONT_DOWN ? "FRONT DOWN" : "level"),
-                       (double)frame_data.roll_deg,
-                       frame_data.roll_state == IMU_ROLL_RIGHT
-                           ? "RIGHT"
-                           : (frame_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));
-                printf("[IMU] Gyro: yaw %+.1f°/s, pitch %+.1f°/s, roll %+.1f°/s\n", (double)frame_data.yaw_rate_dps,
-                       (double)frame_data.pitch_rate_dps, (double)frame_data.roll_rate_dps);
-                printf("[IMU] Status: %s%s%s\n",
-                       (frame_data.pitch_state == IMU_PITCH_LEVEL && frame_data.roll_state == IMU_ROLL_LEVEL)
-                           ? "LEVEL"
-                           : "TILTED",
-                       frame_data.is_rotating ? ", ROTATING" : "", frame_data.is_accelerating ? ", ACCEL" : "");
-            }
-
-            if (imu_fork.available) {
-                printf("FORK\n");
-                printf("[IMU] Accel: fwd %+.2fg, left %+.2fg, up %+.2fg\n", (double)fork_data.accel_forward_g,
-                       (double)fork_data.accel_left_g, (double)fork_data.accel_up_g);
-                printf("[IMU] Tilt: pitch %+.1f° (%s), roll %+.1f° (%s)\n", (double)fork_data.pitch_deg,
-                       fork_data.pitch_state == IMU_PITCH_FRONT_UP
-                           ? "FRONT UP"
-                           : (fork_data.pitch_state == IMU_PITCH_FRONT_DOWN ? "FRONT DOWN" : "level"),
-                       (double)fork_data.roll_deg,
-                       fork_data.roll_state == IMU_ROLL_RIGHT
-                           ? "RIGHT"
-                           : (fork_data.roll_state == IMU_ROLL_LEFT ? "LEFT" : "level"));
-                printf("[IMU] Gyro: yaw %+.1f°/s, pitch %+.1f°/s, roll %+.1f°/s\n", (double)fork_data.yaw_rate_dps,
-                       (double)fork_data.pitch_rate_dps, (double)fork_data.roll_rate_dps);
-                printf("[IMU] Status: %s%s%s\n",
-                       (fork_data.pitch_state == IMU_PITCH_LEVEL && fork_data.roll_state == IMU_ROLL_LEVEL) ? "LEVEL"
-                                                                                                            : "TILTED",
-                       fork_data.is_rotating ? ", ROTATING" : "", fork_data.is_accelerating ? ", ACCEL" : "");
-            }
+        if (imu_sensor_available(&imu_frame)) {
+            ssd1306_draw_string(&disp, 63, 24, 1, "iFra");
+        }
+        if (imu_sensor_available(&imu_fork)) {
+            ssd1306_draw_string(&disp, 90, 24, 1, "iFor");
         }
         ssd1306_show(&disp);
     }
@@ -1190,23 +842,15 @@ static void on_serve_tcp() {
 }
 
 static void (*state_handlers[STATES_COUNT])() = {
-    on_idle,               /* IDLE */
-    on_sleep,              /* SLEEP */
-    on_waking,             /* WAKING */
-    on_rec_start,          /* REC_START */
-    dummy,                 /* RECORD */
-    on_rec_stop,           /* REC_STOP */
-    on_sync_data,          /* SYNC_DATA */
-    on_serve_tcp,          /* SERVE_TCP */
-    on_msc,                /* MSC */
-    on_cal_trvl_idle,      /* CAL_TRVL_IDLE_1 */
-    on_cal_trvl_exp,       /* CAL_TRVL_EXP */
-    on_cal_trvl_idle,      /* CAL_TRVL_IDLE_2 */
-    on_cal_trvl_comp,      /* CAL_TRVL_COMP */
-    on_cal_imu_idle,       /* CAL_IMU_IDLE_1 */
-    on_cal_imu_stationary, /* CAL_IMU_STATIONARY */
-    on_cal_imu_idle,       /* CAL_IMU_IDLE_2 */
-    on_cal_imu_tilt,       /* CAL_IMU_TILT */
+    on_idle,      /* IDLE */
+    on_sleep,     /* SLEEP */
+    on_waking,    /* WAKING */
+    on_rec_start, /* REC_START */
+    dummy,        /* RECORD */
+    on_rec_stop,  /* REC_STOP */
+    on_sync_data, /* SYNC_DATA */
+    on_serve_tcp, /* SERVE_TCP */
+    on_msc,       /* MSC */
 };
 
 // ----------------------------------------------------------------------------
@@ -1214,18 +858,6 @@ static void (*state_handlers[STATES_COUNT])() = {
 
 static void on_left_press(void *user_data) {
     switch (state) {
-        case CAL_TRVL_IDLE_1:
-            state = CAL_TRVL_EXP;
-            break;
-        case CAL_TRVL_IDLE_2:
-            state = CAL_TRVL_COMP;
-            break;
-        case CAL_IMU_IDLE_1:
-            state = CAL_IMU_STATIONARY;
-            break;
-        case CAL_IMU_IDLE_2:
-            state = CAL_IMU_TILT;
-            break;
         case IDLE:
             state = REC_START;
             break;
@@ -1384,7 +1016,25 @@ int main() {
         clock0_orig = clocks_hw->sleep_en0;
         clock1_orig = clocks_hw->sleep_en1;
 
-        calibrate_if_needed();
+        // Initialize calibration context
+        cal_ctx = (struct calibration_ctx){
+            .fork = &fork_sensor,
+            .shock = &shock_sensor,
+            .imu_frame = &imu_frame,
+            .imu_fork = &imu_fork,
+            .imu_rear = &imu_rear,
+            .disp = &disp,
+        };
+
+        if (calibration_check_needed(&cal_ctx)) {
+            if (!calibration_run(&cal_ctx)) {
+                while (true) { tight_loop_contents(); }
+            }
+        }
+
+        calibration_apply_to_sensors(&cal_ctx);
+
+        state = IDLE;
 
         create_button(BUTTON_LEFT, NULL, on_left_press, on_left_longpress);
         create_button(BUTTON_RIGHT, NULL, on_right_press, on_right_longpress);

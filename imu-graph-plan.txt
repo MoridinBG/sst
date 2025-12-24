@@ -1,0 +1,192 @@
+IMU Accelerometer Graph Implementation Plan
+
+Goal: Show a single graph overlaying accelerometer magnitude from all available IMUs
+      (Frame, Fork, Rear) to help discern impacts. Ignore gyroscope data initially.
+      Axes are calibrated: X=forward, Z=up, Y=left.
+
+Following the pattern of travel_figure in dashboard/app/telemetry/travel.py
+
+
+STEP 1: Update Python Data Structures
+File: dashboard/app/telemetry/psst.py
+
+Add IMU dataclass after Suspension class:
+
+    @dataclass
+    class IMU:
+        Present: bool
+        AccelLsbPerG: float
+        GyroLsbPerDps: float
+        Ax: list[int]
+        Ay: list[int]
+        Az: list[int]
+        Gx: list[int]
+        Gy: list[int]
+        Gz: list[int]
+
+Update Telemetry dataclass to add after Rear field:
+
+    IMUFrame: IMU
+    IMUFork: IMU
+    IMURear: IMU
+    IMUSampleRate: int
+
+
+STEP 2: Create IMU Graph Module
+File: dashboard/app/telemetry/imu.py (new file)
+
+Create imu_figure function following travel_figure pattern:
+
+Function signature:
+    def imu_figure(telemetry: Telemetry, lod: int, markers: list[float]) -> figure
+
+Color scheme:
+    Frame IMU: gray (#808080)
+    Fork IMU: front_color from Spectral11[1]
+    Rear IMU: rear_color from Spectral11[2]
+
+Data preparation:
+    Determine which IMUs are present
+    Calculate time array using IMUSampleRate and lod
+    For each present IMU:
+        Convert raw int16 to G: ax_g = ax / AccelLsbPerG
+        Calculate magnitude: mag = sqrt(ax_g^2 + ay_g^2 + az_g^2)
+        Apply LOD decimation: mag_lod = mag[::lod]
+
+ColumnDataSource structure:
+    t: time array
+    frame_mag: frame accelerometer magnitude (or zeros if not present)
+    fork_mag: fork accelerometer magnitude (or zeros if not present)
+    rear_mag: rear accelerometer magnitude (or zeros if not present)
+    frame_ax, frame_ay, frame_az: individual axes for tooltip (G units)
+    fork_ax, fork_ay, fork_az: individual axes for tooltip
+    rear_ax, rear_ay, rear_az: individual axes for tooltip
+
+Figure configuration:
+    name='imu'
+    title="Accelerometer (G)"
+    height=300
+    min_border_left=50
+    min_border_right=50
+    sizing_mode="stretch_width"
+    toolbar_location='above'
+    tools='xpan,reset,hover'
+    active_inspect=None
+    active_drag='xpan'
+    x_axis_label="Elapsed time (s)"
+    y_axis_label="Acceleration (G)"
+    output_backend='webgl'
+
+Y-axis range:
+    Single y-axis (all IMUs share same scale)
+    Range from 0 to auto-calculated max based on data
+
+Add lines:
+    One line per present IMU with legend labels "Frame", "Fork", "Rear"
+    line_width=1 (thinner than travel graph due to higher frequency data)
+
+Tooltips:
+    elapsed time: @t s
+    frame: @frame_mag G (ax: @frame_ax, ay: @frame_ay, az: @frame_az)
+    fork: @fork_mag G (ax: @fork_ax, ay: @fork_ay, az: @fork_az)
+    rear: @rear_mag G (ax: @rear_ax, ay: @rear_ay, az: @rear_az)
+    Only show present IMUs in tooltip
+
+Add markers if present (same pattern as travel graph)
+
+Add tools:
+    WheelZoomTool with dimensions='width'
+    CrosshairTool linked to travel graph crosshair
+    Configure hover mode='vline'
+
+Legend:
+    location='bottom_right'
+    click_policy='hide'
+
+Return figure
+
+
+STEP 3: Update Session HTML Cache Generation
+File: dashboard/app/telemetry/session_html.py
+
+Add import:
+    from app.telemetry.imu import imu_figure
+
+In create_cache function after p_velocity creation (around line 94):
+
+Check if any IMU is present:
+    imu_present = (telemetry.IMUFrame.Present or
+                   telemetry.IMUFork.Present or
+                   telemetry.IMURear.Present)
+
+If imu_present:
+    Create IMU figure:
+        p_imu = imu_figure(telemetry, lod, telemetry.Markers)
+
+    Link x_range bidirectionally to p_travel:
+        p_travel.x_range.js_link('start', p_imu.x_range, 'start')
+        p_travel.x_range.js_link('end', p_imu.x_range, 'end')
+        p_imu.x_range.js_link('start', p_travel.x_range, 'start')
+        p_imu.x_range.js_link('end', p_travel.x_range, 'end')
+
+    Link crosshair overlay to travel graph crosshair for video sync:
+        p_travel.toolbar.active_inspect.overlay.js_on_change('location', on_seek)
+        (reuse the same on_seek callback)
+
+Add p_imu to document roots after p_velocity (around line 168):
+    if imu_present:
+        document.add_root(p_imu)
+        columns.append('imu')
+
+
+STEP 4: Update Database Model
+File: dashboard/app/models/session_html.py
+
+Add column to SessionHtml class:
+    imu: str = db.Column(db.String)
+
+
+STEP 5: Create Database Migration
+File: dashboard/migrations/versions/[timestamp]_add_imu_column.py
+
+Create migration with:
+    def upgrade():
+        op.add_column('session_html', sa.Column('imu', sa.String(), nullable=True))
+
+    def downgrade():
+        op.drop_column('session_html', 'imu')
+
+
+STEP 6: Update Frontend
+File: dashboard/frontend/src/views/Dashboard.js
+
+In the view function where session divs are rendered:
+    Find where travel and velocity divs are rendered
+    Add IMU div after velocity div
+    Use conditional rendering: only show if Session.current.divs includes imu
+    Access via Session.current.imu or by index in divs array
+
+Check the current div indexing pattern to determine correct index
+
+
+STEP 7: Handle Sample Rate Differences
+Note: IMU may have different sample rate than suspension telemetry
+
+In imu_figure:
+    Use telemetry.IMUSampleRate for time calculation
+    This is separate from telemetry.TelemetrySampleRate
+
+Time alignment consideration:
+    IMU and suspension data may not align perfectly
+    The x_range linking will still work since both use elapsed time
+    Hover may show different samples but same time position
+
+
+Implementation Order:
+1. psst.py - Add IMU dataclass and Telemetry fields
+2. imu.py - Create the plotting module
+3. session_html.py - Integrate IMU graph
+4. session_html.py model - Add imu column
+5. Migration - Add database column
+6. Frontend - Render the div
+7. Test with session that has IMU data

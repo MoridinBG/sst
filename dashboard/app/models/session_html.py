@@ -15,6 +15,7 @@ class SessionHtml(db.Model):
     map: str = db.Column(db.String, nullable=False)
     lr: str = db.Column(db.String, nullable=False)
     sw: str = db.Column(db.String, nullable=False)
+    imu: str = db.Column(db.String)
     f_thist: str = db.Column(db.String)
     f_fft: str = db.Column(db.String)
     f_vhist: str = db.Column(db.String)

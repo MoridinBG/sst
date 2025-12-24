@@ -74,13 +74,30 @@ class Suspension:
 
 
 @dataclass
+class IMU:
+    Present: bool
+    AccelLsbPerG: float
+    GyroLsbPerDps: float
+    Ax: list[int]
+    Ay: list[int]
+    Az: list[int]
+    Gx: list[int]
+    Gy: list[int]
+    Gz: list[int]
+
+
+@dataclass
 class Telemetry:
     Name: str
     Version: int
     TelemetrySampleRate: int
+    IMUSampleRate: int
     Timestamp: int
     Front: Suspension
     Rear: Suspension
+    IMUFrame: IMU
+    IMUFork: IMU
+    IMURear: IMU
     Linkage: Linkage
     Airtimes: list[Airtime]
     Markers: list[float]

@@ -15,6 +15,7 @@ from app.models.session import Session
 from app.models.session_html import SessionHtml
 from app.telemetry.balance import balance_figure
 from app.telemetry.fft import fft_figure
+from app.telemetry.imu import imu_figure
 from app.telemetry.leverage import leverage_ratio_figure, shock_wheel_figure
 from app.telemetry.map import map_figure
 from app.telemetry.psst import Telemetry, dataclass_from_dict
@@ -97,6 +98,16 @@ def create_cache(session_id: uuid.UUID, lod: int, hst: int):
     p_velocity.x_range.js_link('start', p_travel.x_range, 'start')
     p_velocity.x_range.js_link('end', p_travel.x_range, 'end')
 
+    imu_present = (telemetry.IMUFrame.Present or
+                   telemetry.IMUFork.Present or
+                   telemetry.IMURear.Present)
+    if imu_present:
+        p_imu = imu_figure(telemetry, lod, telemetry.Markers)
+        p_travel.x_range.js_link('start', p_imu.x_range, 'start')
+        p_travel.x_range.js_link('end', p_imu.x_range, 'end')
+        p_imu.x_range.js_link('start', p_travel.x_range, 'start')
+        p_imu.x_range.js_link('end', p_travel.x_range, 'end')
+
     '''
     Leverage-related graphs. These are input data, not something measured.
     '''
@@ -151,6 +162,8 @@ def create_cache(session_id: uuid.UUID, lod: int, hst: int):
     p_map, on_seek = map_figure()
     on_seek.code = on_seek_code
     p_travel.toolbar.active_inspect.overlay.js_on_change('location', on_seek)
+    if imu_present:
+        p_imu.toolbar.active_inspect.overlay.js_on_change('location', on_seek)
 
     '''
     Construct the layout.
@@ -166,10 +179,15 @@ def create_cache(session_id: uuid.UUID, lod: int, hst: int):
 
     document.add_root(p_travel)
     document.add_root(p_velocity)
+    if imu_present:
+        document.add_root(p_imu)
     document.add_root(p_map)
     document.add_root(p_lr)
     document.add_root(p_sw)
-    columns = ['session_id', 'script', 'travel', 'velocity', 'map', 'lr', 'sw']
+    columns = ['session_id', 'script', 'travel', 'velocity']
+    if imu_present:
+        columns.append('imu')
+    columns.extend(['map', 'lr', 'sw'])
 
     if telemetry.Front.Present:
         prefix = 'front_' if suspension_count == 2 else ''

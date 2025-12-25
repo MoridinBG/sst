@@ -32,14 +32,22 @@ def imu_figure(telemetry: Telemetry, lod: int, markers: list[float]) -> figure:
             ay_g = np.array(imu.Ay) / imu.AccelLsbPerG
             az_g = np.array(imu.Az) / imu.AccelLsbPerG
 
+            # Convert gyro to degrees per second
+            gx_dps = np.array(imu.Gx) / imu.GyroLsbPerDps
+            gy_dps = np.array(imu.Gy) / imu.GyroLsbPerDps
+            gz_dps = np.array(imu.Gz) / imu.GyroLsbPerDps
+
             # Magnitude
             mag = np.sqrt(ax_g**2 + ay_g**2 + az_g**2)
 
             # LOD decimation
             data[f'{prefix}_mag'] = mag[::lod]
-            data[f'{prefix}_ax'] = ax_g[::lod]
-            data[f'{prefix}_ay'] = ay_g[::lod]
-            data[f'{prefix}_az'] = az_g[::lod]
+            data[f'{prefix}_ax'] = np.around(ax_g[::lod], 2)
+            data[f'{prefix}_ay'] = np.around(ay_g[::lod], 2)
+            data[f'{prefix}_az'] = np.around(az_g[::lod], 2)
+            data[f'{prefix}_gx'] = np.around(gx_dps[::lod], 1)
+            data[f'{prefix}_gy'] = np.around(gy_dps[::lod], 1)
+            data[f'{prefix}_gz'] = np.around(gz_dps[::lod], 1)
             return True
         else:
             if imu_len > 0:
@@ -48,6 +56,9 @@ def imu_figure(telemetry: Telemetry, lod: int, markers: list[float]) -> figure:
                 data[f'{prefix}_ax'] = zeros
                 data[f'{prefix}_ay'] = zeros
                 data[f'{prefix}_az'] = zeros
+                data[f'{prefix}_gx'] = zeros
+                data[f'{prefix}_gy'] = zeros
+                data[f'{prefix}_gz'] = zeros
             return False
 
     frame_present = process_imu(telemetry.IMUFrame, "frame")
@@ -72,17 +83,34 @@ def imu_figure(telemetry: Telemetry, lod: int, markers: list[float]) -> figure:
         output_backend='webgl')
 
     tooltips = [("elapsed time", "@t s")]
+    first_line = None
     if frame_present:
-        tooltips.append(("frame", "@frame_mag G (ax: @frame_ax, ay: @frame_ay, az: @frame_az)"))
-        p.line('t', 'frame_mag', legend_label="Frame", line_width=1, color=FRAME_COLOR, source=source)
+        tooltips.append(("frame", "@frame_mag{0.00} G"))
+        tooltips.append(("", "ax: @frame_ax, ay: @frame_ay, az: @frame_az"))
+        tooltips.append(("", "gx: @frame_gx, gy: @frame_gy, gz: @frame_gz"))
+        line = p.line('t', 'frame_mag', legend_label="Frame", line_width=1, color=FRAME_COLOR, source=source)
+        if first_line is None:
+            first_line = line
     if fork_present:
-        tooltips.append(("fork", "@fork_mag G (ax: @fork_ax, ay: @fork_ay, az: @fork_az)"))
-        p.line('t', 'fork_mag', legend_label="Fork", line_width=1, color=FRONT_COLOR, source=source)
+        tooltips.append(("fork", "@fork_mag{0.00} G"))
+        tooltips.append(("", "ax: @fork_ax, ay: @fork_ay, az: @fork_az"))
+        tooltips.append(("", "gx: @fork_gx, gy: @fork_gy, gz: @fork_gz"))
+        line = p.line('t', 'fork_mag', legend_label="Fork", line_width=1, color=FRONT_COLOR, source=source)
+        if first_line is None:
+            first_line = line
     if rear_present:
-        tooltips.append(("rear", "@rear_mag G (ax: @rear_ax, ay: @rear_ay, az: @rear_az)"))
-        p.line('t', 'rear_mag', legend_label="Rear", line_width=1, color=REAR_COLOR, source=source)
+        tooltips.append(("rear", "@rear_mag{0.00} G"))
+        tooltips.append(("", "ax: @rear_ax, ay: @rear_ay, az: @rear_az"))
+        tooltips.append(("", "gx: @rear_gx, gy: @rear_gy, gz: @rear_gz"))
+        line = p.line('t', 'rear_mag', legend_label="Rear", line_width=1, color=REAR_COLOR, source=source)
+        if first_line is None:
+            first_line = line
 
     p.hover.tooltips = tooltips
+    p.hover.line_policy = 'none'
+    p.hover.show_arrow = False
+    if first_line is not None:
+        p.hover.renderers = [first_line]
 
     if markers:
         for marker in markers:

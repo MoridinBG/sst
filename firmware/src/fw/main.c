@@ -51,7 +51,7 @@ static uint32_t clock0_orig;
 static uint32_t clock1_orig;
 
 static ssd1306_t disp;
-static repeating_timer_t telemetry_timer;
+static repeating_timer_t travel_timer;
 static repeating_timer_t imu_timer;
 static FIL recording;
 static struct tcpserver server;
@@ -260,11 +260,11 @@ static void wifi_disconnect() {
 // ----------------------------------------------------------------------------
 // Data acquisition
 
-static const uint16_t TELEMETRY_SAMPLE_RATE = 1000;
+static const uint16_t TRAVEL_SAMPLE_RATE = 1000;
 static const uint16_t IMU_SAMPLE_RATE = 200;
 
 // We are using two buffers per sensor type. Data acquisition happens on core #1 into the active
-// buffer (referred to by the pointer active_telemetry_buffer) and we dump to Micro SD card
+// buffer (referred to by the pointer active_travel_buffer) and we dump to Micro SD card
 // on core #2.
 //
 // When the active buffer is filled on core #1,
@@ -276,24 +276,21 @@ static const uint16_t IMU_SAMPLE_RATE = 200;
 //  - sends the buffer address to core #1 via FIFO
 //
 
-struct record telemetry_databuffer1[BUFFER_SIZE];
-struct record telemetry_databuffer2[BUFFER_SIZE];
-struct record *active_telemetry_buffer = telemetry_databuffer1;
-uint16_t telemetry_count = 0;
+struct travel_record travel_databuffer1[BUFFER_SIZE];
+struct travel_record travel_databuffer2[BUFFER_SIZE];
+struct travel_record *active_travel_buffer = travel_databuffer1;
+uint16_t travel_count = 0;
 
 struct imu_record imu_databuffer1[BUFFER_SIZE];
 struct imu_record imu_databuffer2[BUFFER_SIZE];
 struct imu_record *active_imu_buffer = imu_databuffer1;
 uint16_t imu_count = 0;
 
-uint32_t total_telemetry_samples = 0;
-uint32_t total_imu_samples = 0;
-
-static void dump_active_telemetry_buffer(uint16_t size) {
-    multicore_fifo_push_blocking(DUMP_TELEMETRY);
+static void dump_active_travel_buffer(uint16_t size) {
+    multicore_fifo_push_blocking(DUMP_TRAVEL);
     multicore_fifo_push_blocking(size);
-    multicore_fifo_push_blocking((uintptr_t)active_telemetry_buffer);
-    active_telemetry_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
+    multicore_fifo_push_blocking((uintptr_t)active_travel_buffer);
+    active_travel_buffer = (struct travel_record *)((uintptr_t)multicore_fifo_pop_blocking());
 }
 
 static void dump_active_imu_buffer(uint16_t size) {
@@ -303,19 +300,18 @@ static void dump_active_imu_buffer(uint16_t size) {
     active_imu_buffer = (struct imu_record *)((uintptr_t)multicore_fifo_pop_blocking());
 }
 
-static bool telemetry_cb(repeating_timer_t *rt) {
-    if (telemetry_count == BUFFER_SIZE) {
-        dump_active_telemetry_buffer(BUFFER_SIZE);
-        telemetry_count = 0;
+static bool travel_cb(repeating_timer_t *rt) {
+    if (travel_count == BUFFER_SIZE) {
+        dump_active_travel_buffer(BUFFER_SIZE);
+        travel_count = 0;
     }
-    active_telemetry_buffer[telemetry_count].fork_angle = fork_sensor.measure(&fork_sensor);
-    active_telemetry_buffer[telemetry_count].shock_angle = shock_sensor.measure(&shock_sensor);
-    telemetry_count += 1;
-    // total_telemetry_samples += 1;
+    active_travel_buffer[travel_count].fork_angle = fork_sensor.measure(&fork_sensor);
+    active_travel_buffer[travel_count].shock_angle = shock_sensor.measure(&shock_sensor);
+    travel_count += 1;
 
     if (marker_pending) {
-        dump_active_telemetry_buffer(telemetry_count);
-        telemetry_count = 0;
+        dump_active_travel_buffer(travel_count);
+        travel_count = 0;
         dump_active_imu_buffer(imu_count);
         imu_count = 0;
 
@@ -374,8 +370,6 @@ static bool imu_cb(repeating_timer_t *rt) {
         active_imu_buffer[imu_count].gz = gz;
         imu_count++;
     }
-
-    // total_imu_samples += 1;
 
     return state == RECORD;
 }
@@ -446,16 +440,16 @@ static int open_datafile() {
         return fr;
     }
 
-    struct header h = {"SST", 4, 0, rtc_timestamp()};
-    f_write(&recording, &h, sizeof(struct header), NULL);
+    struct sst_header h = {"SST", 4, 0, rtc_timestamp()};
+    f_write(&recording, &h, sizeof(struct sst_header), NULL);
 
-    struct chunk_header ch = {CHUNK_TYPE_RATES, 2 * sizeof(struct rate_entry)};
+    struct chunk_header ch = {CHUNK_TYPE_RATES, 2 * sizeof(struct samplerate_record)};
     f_write(&recording, &ch, sizeof(struct chunk_header), NULL);
-    struct rate_entry re = {CHUNK_TYPE_TELEMETRY, TELEMETRY_SAMPLE_RATE};
-    f_write(&recording, &re, sizeof(struct rate_entry), NULL);
+    struct samplerate_record re = {CHUNK_TYPE_TRAVEL, TRAVEL_SAMPLE_RATE};
+    f_write(&recording, &re, sizeof(struct samplerate_record), NULL);
     re.type = CHUNK_TYPE_IMU;
     re.rate = IMU_SAMPLE_RATE;
-    f_write(&recording, &re, sizeof(struct rate_entry), NULL);
+    f_write(&recording, &re, sizeof(struct samplerate_record), NULL);
 
     // Count active IMUs and prepare metadata
     uint8_t imu_count = 0;
@@ -470,31 +464,31 @@ static int open_datafile() {
     // frame, fork, rear
     if (imu_count > 0) {
         ch.type = CHUNK_TYPE_IMU_META;
-        ch.length = 1 + imu_count * sizeof(struct imu_meta_entry);
+        ch.length = 1 + imu_count * sizeof(struct imu_meta_record);
         f_write(&recording, &ch, sizeof(struct chunk_header), NULL);
         f_write(&recording, &imu_count, 1, NULL);
 
         if (imu_frame.available) {
-            struct imu_meta_entry entry = {0, imu_frame.accel_lsb_per_g, imu_frame.gyro_lsb_per_dps};
-            f_write(&recording, &entry, sizeof(struct imu_meta_entry), NULL);
+            struct imu_meta_record entry = {0, imu_frame.accel_lsb_per_g, imu_frame.gyro_lsb_per_dps};
+            f_write(&recording, &entry, sizeof(struct imu_meta_record), NULL);
         }
         if (imu_fork.available) {
-            struct imu_meta_entry entry = {1, imu_fork.accel_lsb_per_g, imu_fork.gyro_lsb_per_dps};
-            f_write(&recording, &entry, sizeof(struct imu_meta_entry), NULL);
+            struct imu_meta_record entry = {1, imu_fork.accel_lsb_per_g, imu_fork.gyro_lsb_per_dps};
+            f_write(&recording, &entry, sizeof(struct imu_meta_record), NULL);
         }
         if (imu_rear.available) {
-            struct imu_meta_entry entry = {2, imu_rear.accel_lsb_per_g, imu_rear.gyro_lsb_per_dps};
-            f_write(&recording, &entry, sizeof(struct imu_meta_entry), NULL);
+            struct imu_meta_record entry = {2, imu_rear.accel_lsb_per_g, imu_rear.gyro_lsb_per_dps};
+            f_write(&recording, &entry, sizeof(struct imu_meta_record), NULL);
         }
     }
 
     return index;
 }
 
-static void write_telemetry_chunk(uint16_t size, struct record *buffer) {
+static void write_travel_chunk(uint16_t size, struct travel_record *buffer) {
     struct chunk_header ch;
-    ch.type = CHUNK_TYPE_TELEMETRY;
-    ch.length = size * sizeof(struct record);
+    ch.type = CHUNK_TYPE_TRAVEL;
+    ch.length = size * sizeof(struct travel_record);
     f_write(&recording, &ch, sizeof(struct chunk_header), NULL);
     f_write(&recording, buffer, ch.length, NULL);
     f_sync(&recording);
@@ -516,7 +510,7 @@ static void data_storage_core1() {
     int index;
     enum command cmd;
     uint16_t size;
-    struct record *telemetry_buffer;
+    struct travel_record *travel_buffer;
     struct imu_record *imu_buffer;
     struct chunk_header ch;
 
@@ -527,14 +521,14 @@ static void data_storage_core1() {
                 multicore_fifo_drain();
                 index = open_datafile();
                 multicore_fifo_push_blocking(index);
-                multicore_fifo_push_blocking((uintptr_t)telemetry_databuffer2);
+                multicore_fifo_push_blocking((uintptr_t)travel_databuffer2);
                 multicore_fifo_push_blocking((uintptr_t)imu_databuffer2);
                 break;
-            case DUMP_TELEMETRY:
+            case DUMP_TRAVEL:
                 size = (uint16_t)multicore_fifo_pop_blocking();
-                telemetry_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
-                multicore_fifo_push_blocking((uintptr_t)telemetry_buffer);
-                write_telemetry_chunk(size, telemetry_buffer);
+                travel_buffer = (struct travel_record *)((uintptr_t)multicore_fifo_pop_blocking());
+                multicore_fifo_push_blocking((uintptr_t)travel_buffer);
+                write_travel_chunk(size, travel_buffer);
                 break;
             case DUMP_IMU:
                 size = (uint16_t)multicore_fifo_pop_blocking();
@@ -549,10 +543,10 @@ static void data_storage_core1() {
                 f_sync(&recording);
                 break;
             case FINISH:
-                // Flush telemetry
+                // Flush travel
                 size = (uint16_t)multicore_fifo_pop_blocking();
-                telemetry_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
-                write_telemetry_chunk(size, telemetry_buffer);
+                travel_buffer = (struct travel_record *)((uintptr_t)multicore_fifo_pop_blocking());
+                write_travel_chunk(size, travel_buffer);
                 // Flush IMU
                 size = (uint16_t)multicore_fifo_pop_blocking();
                 imu_buffer = (struct imu_record *)((uintptr_t)multicore_fifo_pop_blocking());
@@ -595,12 +589,10 @@ static void setup_display(ssd1306_t *disp) {
 
 static void on_rec_start() {
     LOG("REC", "Starting recording session\n");
-    telemetry_count = 0;
-    active_telemetry_buffer = telemetry_databuffer1;
+    travel_count = 0;
+    active_travel_buffer = travel_databuffer1;
     imu_count = 0;
     active_imu_buffer = imu_databuffer1;
-    total_telemetry_samples = 0;
-    total_imu_samples = 0;
     multicore_fifo_drain();
 
     display_message(&disp, "INIT SENS");
@@ -627,11 +619,11 @@ static void on_rec_start() {
     LOG("REC", "Recording to file index %d\n", index);
 
     // Initial buffer pointers for Core 1
-    active_telemetry_buffer = (struct record *)((uintptr_t)multicore_fifo_pop_blocking());
+    active_travel_buffer = (struct travel_record *)((uintptr_t)multicore_fifo_pop_blocking());
     active_imu_buffer = (struct imu_record *)((uintptr_t)multicore_fifo_pop_blocking());
 
     // Start data acquisition timers
-    if (!add_repeating_timer_us(-1000000 / TELEMETRY_SAMPLE_RATE, telemetry_cb, NULL, &telemetry_timer)) {
+    if (!add_repeating_timer_us(-1000000 / TRAVEL_SAMPLE_RATE, travel_cb, NULL, &travel_timer)) {
         display_message(&disp, "TEL TMR ERR");
         while (true) { tight_loop_contents(); }
     }
@@ -646,11 +638,10 @@ static void on_rec_start() {
 }
 
 static void on_rec_stop() {
-    LOG("REC", "Stopping recording, telemetry samples: %lu, imu samples: %lu\n", total_telemetry_samples,
-        total_imu_samples);
+    LOG("REC", "Stopping recording\n");
     state = IDLE;
     display_message(&disp, "IDLE");
-    cancel_repeating_timer(&telemetry_timer);
+    cancel_repeating_timer(&travel_timer);
 
     bool imu_active = imu_frame.available || imu_fork.available || imu_rear.available;
     if (imu_active) {
@@ -658,9 +649,9 @@ static void on_rec_stop() {
     }
 
     multicore_fifo_push_blocking(FINISH);
-    // Flush telemetry
-    multicore_fifo_push_blocking(telemetry_count);
-    multicore_fifo_push_blocking((uintptr_t)active_telemetry_buffer);
+    // Flush travel
+    multicore_fifo_push_blocking(travel_count);
+    multicore_fifo_push_blocking((uintptr_t)active_travel_buffer);
     // Flush IMU
     multicore_fifo_push_blocking(imu_count);
     multicore_fifo_push_blocking((uintptr_t)active_imu_buffer);

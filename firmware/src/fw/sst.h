@@ -91,7 +91,7 @@ struct gps_record {
     uint8_t satellites;
     float epe_2d;
     float epe_3d;
-};
+} __attribute__((packed));
 
 enum command { OPEN, DUMP_TRAVEL, DUMP_IMU, DUMP_GPS, FINISH, MARKER };
 

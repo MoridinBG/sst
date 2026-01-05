@@ -43,7 +43,7 @@
 
 #include "hardware_config.h"
 
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
 #include "../sensor/gps/gps_sensor.h"
 #include "../sensor/gps/lc76g.h"
 #endif
@@ -51,6 +51,7 @@
 static volatile enum state state;
 static volatile bool marker_pending = false;
 
+#if HAS_GPS
 #if GPS_MODULE == GPS_LC76G
 static void on_gps_fix(const struct gps_telemetry *t);
 struct gps_sensor gps = {
@@ -71,6 +72,7 @@ struct gps_sensor gps = {
 #else
 struct gps_sensor gps = {.available = false};
 #endif
+#endif // HAS_GPS
 
 static uint32_t scb_orig;
 static uint32_t clock0_orig;
@@ -81,7 +83,7 @@ static repeating_timer_t travel_timer;
 #if HAS_IMU
 static repeating_timer_t imu_timer;
 #endif
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
 static repeating_timer_t gps_timer;
 #endif
 static FIL recording;
@@ -323,7 +325,7 @@ struct imu_record *active_imu_buffer = imu_databuffer1;
 uint16_t imu_count = 0;
 #endif
 
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
 struct gps_record gps_databuffer1[GPS_BUFFER_SIZE];
 struct gps_record gps_databuffer2[GPS_BUFFER_SIZE];
 struct gps_record *gps_active_buffer = gps_databuffer1;
@@ -346,7 +348,7 @@ static void dump_active_imu_buffer(uint16_t size) {
 }
 #endif
 
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
 static void dump_gps_active_buffer(uint16_t size) {
     multicore_fifo_push_blocking(DUMP_GPS);
     multicore_fifo_push_blocking(size);
@@ -433,7 +435,7 @@ static bool imu_cb(repeating_timer_t *rt) {
 }
 #endif // HAS_IMU
 
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
 static void on_gps_fix(const struct gps_telemetry *t) {
     if (gps.fix_tracker.ready) {
         LOG("GPS", "%.6f,%.6f alt=%.1f spd=%.1f sats=%d epe=%.1f\n", t->latitude, t->longitude, t->altitude, t->speed,
@@ -644,7 +646,7 @@ static void data_storage_core1() {
 #if HAS_IMU
                 multicore_fifo_push_blocking((uintptr_t)imu_databuffer2);
 #endif
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
                 multicore_fifo_push_blocking((uintptr_t)gps_databuffer2);
 #endif
                 break;
@@ -731,7 +733,7 @@ static void on_rec_start() {
     imu_count = 0;
     active_imu_buffer = imu_databuffer1;
 #endif
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
     gps_count = 0;
     gps_active_buffer = gps_databuffer1;
 #endif
@@ -785,7 +787,7 @@ static void on_rec_start() {
     }
 #endif
 
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
     if (gps.available) {
         add_repeating_timer_ms(-50, gps_timer_cb, NULL, &gps_timer);
     }
@@ -805,7 +807,7 @@ static void on_rec_stop() {
     }
 #endif
 
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
     cancel_repeating_timer(&gps_timer);
     if (gps_count > 0) {
         dump_gps_active_buffer(gps_count);
@@ -1087,7 +1089,7 @@ int main() {
 #endif
 
     // GPS init
-#if GPS_MODULE != GPS_NONE
+#if HAS_GPS
     if (gps_sensor_init(&gps)) {
         LOG("INIT", "GPS initialized\n");
         if (!gps_sensor_configure(&gps, 100, true, true, true, true, false)) {
